@@ -1,9 +1,9 @@
 {
   "name": "BTC CoinGlass × Pionex Liquidity Radar",
-  "version": "0.8.4",
+  "version": "0.8.6",
   "date": "2026-10-16",
-  "base": "0.8.3",
-  "scope": "Upgrade CoinGlass reader to recognize encrypted V0/V1/V2 automatically without changing original UI, frozen state or probability engine",
+  "base": "0.8.5",
+  "scope": "Chart 08:00~19:59 live CoinGlass, 20:00~next 07:59 frozen levels; always-live translucent float; % on probability capsules; HA purple/yellow semantic colors.",
   "coinglass_protocol": {
     "v0": "request Cache-Ts-V2",
     "v1": "API path",
@@ -11,10 +11,11 @@
   },
   "price_feed": "Pionex PERP current quote, 15M and 4H candles unchanged",
   "probability_model": "unchanged 39-feature logistic model + HA +/-4.5 percentage points",
-  "freeze": "20:00 TPE snapshot frozen, live CoinGlass continues polling at 60s intervals",
+  "freeze": "20:00 Asia/Taipei through next 07:59:59 freeze snapshot; 08:00 chart resumes live CoinGlass; floating quote remains live 24h",
   "file_changes": [
-    "coinglass-decrypt.js",
     "app.js",
+    "style.css",
+    "layout-v082.js",
     "index.html",
     "VERSION.json"
   ]

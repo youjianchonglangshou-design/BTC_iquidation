@@ -1,0 +1,12 @@
+從 v0.8.5 升級到 v0.8.6，請將以下 5 個檔案覆蓋原專案：
+1. index.html
+2. app.js
+3. style.css
+4. layout-v082.js
+5. VERSION.json
+
+其餘 JS（CoinGlass V0/V1/V2 解密、派網資料、39 特徵機率模型）請保留不變。
+
+更新後，Chrome Ctrl+F5 清除頁面快取。
+
+本次程式僅做顯示與每日 08:00 / 20:00 切換修正，沒有更新預測機率訓練權重。

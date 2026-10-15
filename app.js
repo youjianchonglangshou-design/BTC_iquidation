@@ -1,4 +1,4 @@
-/* BTC LIQUIDITY RADAR v0.8.4 - Pure browser, no build tools, no API key. */
+/* BTC LIQUIDITY RADAR v0.8.6 - 08:00~20:00 live / 20:00~08:00 frozen chart; live float never freezes. */
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
@@ -11,7 +11,7 @@
     candles:[],fourHCandles:[],fourHSource:'',chartTf:'4h',hoverPoint:null,price:null,priceAt:null,source:'demo',sourceLabel:'歷史示範',mode:'cg',zones:{upper:[],lower:[]},
     maxDistance:.06,binRatio:.0018,manual:{upper:[],lower:[]},oi:null,refreshIssue:'',liveAt:null,cgPain:null,cgAt:0,cgFailures:0,cgError:'尚未取得 CoinGlass 資料',cgBusy:false,cgVersion:null,refreshCGAt:0,
     suppressLive:false,loading:false,refreshKAt:0,refreshPAt:0,hoverIndex:-1,
-    snapshots:[],chartGeometry:null,daily:[],probability:null,baseProb:null,refreshHAAt:0,modelError:'',lastProbCalcAt:0
+    snapshots:[],chartGeometry:null,daily:[],probability:null,baseProb:null,refreshHAAt:0,modelError:'',lastProbCalcAt:0,chartWindowKey:null
   };
   function tpeParts(d=new Date()){
     const o={}; for(const p of TPE_FMT.formatToParts(d))if(p.type!=='literal')o[p.type]=p.value;
@@ -87,20 +87,34 @@
     const numbers=v.replaceAll('，',',').split(/[,;\s]+/).map(x=>Number(x.replaceAll('$','').replaceAll('_',''))).filter(n=>Number.isFinite(n)&&n>0);
     return [...new Set(numbers)].filter(n=>side==='upper'?n>current:n<current).sort((a,b)=>side==='upper'?a-b:b-a).slice(0,6).map((p,i)=>({price:p,distance:Math.abs(p/current-1),score:null,width:Math.max(50,current*.001),manual:true}));
   }
+  // Every daily session starts at 08:00 Asia/Taipei (=00:00 UTC).
+  // 08:00:00–19:59:59: latest CoinGlass 24H; 20:00:00–07:59:59: that session's 20:00 snapshot.
+  // NEVER substitute a later quote for a missing frozen snapshot without marking it LIVE.
+  function chartSession(t=Date.now()){
+    const start=Math.floor(t/86400000)*86400000;
+    const frozenWindow=t>=start+12*3600000;
+    return {start,day:new Date(start).toISOString().slice(0,10),frozenWindow,
+      key:start+':'+(frozenWindow?'frozen':'live')};
+  }
   function calculateCurrentZones(){
     if(state.mode==='cg'){
-      // After 20:00, the frozen daily snapshot is authoritative for displayed targets.
-      // Live CoinGlass updates may still be fetched, but must not overwrite frozen levels.
-      const t=Date.now(),day=new Date(Math.floor(t/86400000)*86400000).toISOString().slice(0,10);
-      const afterFreeze=t%86400000>=12*3600000;
-      const frozen=state.snapshots.find(x=>x.id===day+'-20:00'&&x.mode==='cg');
-      const hasFrozen=Boolean(afterFreeze&&frozen&&(Number(frozen.upper)>0||Number(frozen.lower)>0));
-      // A missing 20:00 snapshot must remain missing: never relabel a later CoinGlass
-      // response as a frozen liquidation target. The independent live strip uses cgPain.
-      const d=afterFreeze?(hasFrozen?{short:Number(frozen.upper),long:Number(frozen.lower),shortAmount:Number(frozen.coinGlassLevelUpper),longAmount:Number(frozen.coinGlassLevelLower)}:null):state.cgPain;
-      const ok=hasFrozen||(!afterFreeze&&d&&t-state.cgAt<180000&&Number.isFinite(state.price));
-      const mk=(price,amount)=>({price,distance:Math.abs(price/state.price-1),score:null,width:Math.max(40,state.price*.00085),cg:true,amount,frozen:!!hasFrozen,main:true});
-      state.zones={upper:ok&&d.short>0?[mk(d.short,d.shortAmount)]:[],lower:ok&&d.long>0?[mk(d.long,d.longAmount)]:[]};
+      const t=Date.now(),{day,frozenWindow}=chartSession(t);
+      const frozen=frozenWindow?state.snapshots.find(x=>x.id===day+'-20:00'&&x.mode==='cg'):null;
+      const hasFrozen=Boolean(frozenWindow&&frozen&&Number(frozen.upper)>0&&Number(frozen.lower)>0);
+      const freshCG=Boolean(state.cgPain&&state.cgAt>0&&t-state.cgAt>=0&&t-state.cgAt<180000&&
+        Number(state.cgPain.short)>0&&Number(state.cgPain.long)>0&&!state.suppressLive);
+      // Frozen price takes precedence. Without a valid 20:00 boundary snapshot, show
+      // CURRENT CoinGlass levels as LIVE, explicitly never pretending they were frozen.
+      const d=hasFrozen?{
+        short:Number(frozen.upper),long:Number(frozen.lower),
+        shortAmount:Number(frozen.coinGlassLevelUpper),longAmount:Number(frozen.coinGlassLevelLower)
+      }:freshCG?state.cgPain:null;
+      state.cgChartLevelMode=hasFrozen?'frozen':freshCG?'live':'none';
+      const mk=(price,amount)=>({price,distance:Math.abs(price/state.price-1),score:null,
+        width:Math.max(40,state.price*.00085),cg:true,amount,
+        frozen:hasFrozen,live:!hasFrozen,main:true});
+      state.zones={upper:d&&d.short>0?[mk(d.short,d.shortAmount)]:[],
+        lower:d&&d.long>0?[mk(d.long,d.longAmount)]:[]};
       return false;
     }
     if(state.mode==='manual'){
@@ -131,13 +145,12 @@
   function renderHeader(useVol){
     $('priceNow').textContent=fmt(state.price);$('priceSource').textContent=state.source==='demo'?state.sourceLabel:(state.priceSource||state.sourceLabel);
     const up=primary(state.zones.upper||[]),down=primary(state.zones.lower||[]);
-    $('boundUpper').textContent=up?fmt(up.price):'--';$('boundUpperDist').textContent=up?pct(up.price,state.price):'尚無候選價位';
-    $('boundLower').textContent=down?fmt(down.price):'--';$('boundLowerDist').textContent=down?pct(down.price,state.price):'尚無候選價位';
-    const t=Date.now(),isAfter20=t%86400000>=12*3600000;
-    const frozenLabel=state.mode==='cg'&&isAfter20;
+    $('boundUpper').textContent=up?fmt(up.price):'--';$('boundUpperDist').textContent=up?(up.live?'即時 · ':'')+pct(up.price,state.price):'尚無候選價位';
+    $('boundLower').textContent=down?fmt(down.price):'--';$('boundLowerDist').textContent=down?(down.live?'即時 · ':'')+pct(down.price,state.price):'尚無候選價位';
+    const t=Date.now(),frozenLabel=state.mode==='cg'&&chartSession(t).frozenWindow;
     const hasFrozenCG=frozenLabel&&(state.zones.upper.some(z=>z.frozen)||state.zones.lower.some(z=>z.frozen));
-    $('frozenUpperLabel').textContent=frozenLabel?(hasFrozenCG?'20:00 凍結上界':'20:00 上界未保存'):(state.mode==='cg'?'CoinGlass 上界':'上方目標');
-    $('frozenLowerLabel').textContent=frozenLabel?(hasFrozenCG?'20:00 凍結下界':'20:00 下界未保存'):(state.mode==='cg'?'CoinGlass 下界':'下方目標');
+    $('frozenUpperLabel').textContent=frozenLabel?(hasFrozenCG?'20:00 凍結上界':state.cgChartLevelMode==='live'?'即時上界（未凍結）':'20:00 上界未保存'):(state.mode==='cg'?'CoinGlass 上界':'上方目標');
+    $('frozenLowerLabel').textContent=frozenLabel?(hasFrozenCG?'20:00 凍結下界':state.cgChartLevelMode==='live'?'即時下界（未凍結）':'20:00 下界未保存'):(state.mode==='cg'?'CoinGlass 下界':'下方目標');
     // The 24H CoinGlass live readout is ALWAYS independent of the frozen chart levels.
     const cgAge=t-state.cgAt;
     const hasValid=Boolean(state.cgPain&&state.cgAt&&state.cgPain.short>0&&state.cgPain.long>0&&!state.suppressLive);
@@ -215,7 +228,7 @@
       note.textContent=item?.reason||'需要 Pionex 15M 歷史資料與日 K；不顯示猜測機率。';
       return;
     }
-    const frozen=item.phase==='frozen';chip.classList.add(frozen?'frozen':'live');chip.textContent=frozen?'20:00 已凍結':'16:00～20:00 動態';
+    const frozen=item.phase==='frozen';chip.classList.add(frozen?'frozen':'live');chip.textContent=frozen?'機率 20:00 已凍結':'16:00～20:00 動態';
     $('upProb').textContent=(item.up*100).toFixed(2)+'%';$('downProb').textContent=((1-item.up)*100).toFixed(2)+'%';
     $('probUpFill').style.width=(item.up*100).toFixed(3)+'%';
     $('fourH0812').textContent=item.foundation.x0812;
@@ -224,13 +237,13 @@
     $('fourH1620').textContent=(ret16>=0?'綠 ':'紅 ')+(ret16>=0?'+':'')+ret16.toFixed(2)+'%';
     $('baseProb').textContent=Number.isFinite(item.baseUp)?(100*item.baseUp).toFixed(2)+'%':'--';
     const diff=Number.isFinite(item.baseUp)?100*(item.modelUp-item.baseUp):null;
-    $('dynamicDelta').textContent=Number.isFinite(diff)?(diff>=0?'+':'')+diff.toFixed(2)+'pt':'--';
+    $('dynamicDelta').textContent=Number.isFinite(diff)?(diff>=0?'+':'')+diff.toFixed(2)+'%':'--';
     $('haColor').textContent=item.haColor+(item.haPriorColor?`（前日${item.haPriorColor}）`:'');
     $('haColor').style.color=item.haColor==='黃'?'#f5d36b':'#d3a7f8';
-    $('haWeight').textContent=(item.haDelta>0?'+':'')+(item.haDelta*100).toFixed(1)+'pt';
+    $('haWeight').textContent=(item.haDelta>0?'+':'')+(item.haDelta*100).toFixed(2)+'%';
     $('trainedTarget').textContent=fmt(item.modelTargets.upper)+' / '+fmt(item.modelTargets.lower);
     $('probAsOf').textContent=`${tpeTime(item.asof)} · ${state.source==='demo'?'離線研究快照':frozen?'凍結時點':'即時觀察'}`;
-    note.textContent=`原模型 ${(item.modelUp*100).toFixed(2)}% → HA ${item.haColor} ${(item.haDelta>=0?'+':'')+(item.haDelta*100).toFixed(1)}pt → 最終上掃 ${(item.up*100).toFixed(2)}% ／ 下掃 ${((1-item.up)*100).toFixed(2)}%。條件：20:00 至隔日08:00至少一側「訓練代理清算層」被觸及。${frozen?'已在20:00鎖定，不隨後續價格更新。':item.partial?'每10秒重算為訓練整點間的盤中插值，需視為探索值。':'此時點為整點模型快照。'}${'目前 PIONEX 行情與原訓練樣本的交易來源不同，機率尚待重新樣本外驗證。'}`;
+    note.textContent=`原模型 ${(item.modelUp*100).toFixed(2)}% → HA ${item.haColor} ${(item.haDelta>=0?'+':'')+(item.haDelta*100).toFixed(2)}% → 最終上掃 ${(item.up*100).toFixed(2)}% ／ 下掃 ${((1-item.up)*100).toFixed(2)}%。條件：20:00 至隔日08:00至少一側「訓練代理清算層」被觸及。${frozen?'已在20:00鎖定，不隨後續價格更新。':item.partial?'每10秒重算為訓練整點間的盤中插值，需視為探索值。':'此時點為整點模型快照。'}${'目前 PIONEX 行情與原訓練樣本的交易來源不同，機率尚待重新樣本外驗證。'}`;
   }
   function redraw(){const useVol=calculateCurrentZones();renderHeader(useVol);renderZones();showProbability();drawChart();renderSnapshot();}
   const canvas=$('priceChart'),tooltip=$('chartTooltip');
@@ -316,7 +329,7 @@
       for(const z of arr){
         const yy=y(z.price),w=Math.max(3,Math.abs(y(z.price+(z.width||35)/2)-y(z.price-(z.width||35)/2)));
         ctx.fillStyle=up?'rgba(43,215,184,.075)':'rgba(241,116,137,.075)';ctx.fillRect(L,yy-w/2,pw,w);
-        levels.push({price:z.price,yy,dir,main:z===main,color:up?'#35dcb8':'#f47c8a'});
+        levels.push({price:z.price,yy,dir,main:z===main,live:!!z.live,color:up?'#35dcb8':'#f47c8a'});
       }
     }
     const bodyW=clamp(step*.63,2.6,21);
@@ -336,7 +349,7 @@
     }
     // Dashed levels deliberately over candles, extended all the way to the right scale.
     for(const lev of levels){
-      ctx.strokeStyle=lev.color;ctx.lineWidth=lev.main?1.8:1.25;ctx.setLineDash(lev.main?[8,6]:[4,6]);
+      ctx.strokeStyle=lev.color;ctx.lineWidth=lev.live?1.45:(lev.main?1.8:1.25);ctx.setLineDash(lev.live?[3,6]:(lev.main?[8,6]:[4,6]));
       ctx.beginPath();ctx.moveTo(L,lev.yy);ctx.lineTo(g.axisX+4,lev.yy);ctx.stroke();ctx.setLineDash([]);
       ctx.fillStyle=lev.color;ctx.beginPath();ctx.arc(plotR+5,lev.yy,lev.main?3.5:2.4,0,Math.PI*2);ctx.fill();
     }
@@ -371,7 +384,7 @@
       const bg=lev.dir==='upper'?'#115849':'#6d3640';
       roundRect(ctx,g.axisX,place-11,g.axisWidth,22,4,bg,lev.color);
       ctx.fillStyle=lev.dir==='upper'?'#e1fff3':'#fff0f3';ctx.textBaseline='middle';ctx.textAlign='center';ctx.font='bold 11px Arial';
-      ctx.fillText(priceText(lev.price),g.axisX+g.axisWidth/2,place,g.axisWidth-6);
+      ctx.fillText((lev.live?'即時 ':'')+priceText(lev.price),g.axisX+g.axisWidth/2,place,g.axisWidth-6);
     }
     if(hover){
       // Date/time badge (reference screenshot lower red rectangle).
@@ -598,9 +611,13 @@
       if(t-state.refreshHAAt>HA_INTERVAL&&state.source!=='demo'){state.refreshHAAt=t;refreshDaily().then(redraw);}
       if(t-state.refreshCGAt>COINGLASS_INTERVAL){state.refreshCGAt=t;loadCoinGlass();}
     }
+    // Re-evaluate the chart ON THE EXACT 08:00/20:00 phase change,
+    // even if quote/API requests fail and there is no price-update redraw.
+    const key=chartSession().key;
+    if(state.chartWindowKey!==key){state.chartWindowKey=key;redraw();}
     maybeAutoFreeze();
   }
   restoreCoinGlassCache();state.snapshots=loadLocalSnapshots();state.candles=readDemo();state.daily=readDemoDays();state.price=state.candles.at(-1).c;redraw();clockTick();setInterval(clockTick,1000);
   setTimeout(loadRealtime,400);setTimeout(loadCoinGlass,700);
-  window.BTC_RADAR_TEST={buildZones,parseLevels,tpeParts,scoreSettlements,loadCoinGlass,refreshTick,loadRealtime,getState:()=>({liveCGUpper:state.cgPain?.short??null,liveCGLower:state.cgPain?.long??null,liveCGAt:state.cgAt,chartTf:state.chartTf,chart4HCount:state.fourHCandles.length,price:state.price,source:state.source,sourceLabel:state.sourceLabel,mode:state.mode,zones:state.zones,cgPain:state.cgPain,cgAt:state.cgAt,cgVersion:state.cgVersion,cgError:state.cgError,snapshots:state.snapshots,probability:state.probability,refreshIssue:state.refreshIssue})};
+  window.BTC_RADAR_TEST={buildZones,parseLevels,tpeParts,scoreSettlements,loadCoinGlass,refreshTick,loadRealtime,chartSession,forceRedraw:redraw,clockTick,getState:()=>({liveCGUpper:state.cgPain?.short??null,liveCGLower:state.cgPain?.long??null,liveCGAt:state.cgAt,chartTf:state.chartTf,chart4HCount:state.fourHCandles.length,price:state.price,source:state.source,sourceLabel:state.sourceLabel,mode:state.mode,zones:state.zones,cgPain:state.cgPain,cgAt:state.cgAt,cgVersion:state.cgVersion,cgError:state.cgError,snapshots:state.snapshots,cgChartLevelMode:state.cgChartLevelMode,probability:state.probability,refreshIssue:state.refreshIssue})};
 })();

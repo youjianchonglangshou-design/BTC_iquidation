@@ -13,6 +13,18 @@
   bind('baseProb','basePill');
   bind('dynamicDelta','deltaPill');
   bind('haWeight','weightPill');
+  // Apply chart semantic HA colors to the full mean-candle capsule, not only the label text.
+  // This follows the already-calculated value; it never modifies the HA/model algorithm.
+  const haSource=$('haColor'),haPill=$('haPill'),haWeight=$('haWeight');
+  function syncHATone(){
+    const tone=/^黃/.test(haSource.textContent.trim())?'yellow':/^紫/.test(haSource.textContent.trim())?'purple':'neutral';
+    haSource.dataset.haTone=tone;
+    haPill.closest('.metric-capsule')?.setAttribute('data-ha-tone',tone);
+    haWeight.dataset.haTone=tone;
+    $('weightPill').closest('.metric-capsule')?.setAttribute('data-ha-tone',tone);
+  }
+  new MutationObserver(syncHATone).observe(haSource,{childList:true,characterData:true,subtree:true});
+  syncHATone();
 
   const host = $('chartArea'), float = $('liveTargetFloat');
   if (!host || !float) return;

@@ -140,7 +140,7 @@ html,body{background:#071321}
 .single-prob-card .prob-side:hover .prob-target b{text-decoration:underline;text-decoration-style:dotted;text-underline-offset:4px}
 .sr-only{position:absolute!important;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 /* The floating live CoinGlass view is intentionally independent of 20:00 frozen lines. */
-.liquidation-float{z-index:9;position:absolute;left:13px;bottom:43px;top:auto;display:flex;align-items:center;gap:10px;width:max-content;max-width:calc(100% - 12px);border:1px solid rgba(119,166,180,.45);border-radius:9px;padding:7px 12px 7px 9px;background:rgba(9,29,47,.73);backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);box-shadow:0 4px 18px rgba(0,0,0,.22);cursor:grab;user-select:none;touch-action:none;font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap;will-change:left,top}
+.liquidation-float{z-index:9;position:absolute;left:13px;bottom:43px;top:auto;display:flex;align-items:center;gap:10px;width:max-content;max-width:calc(100% - 12px);border:1px solid rgba(119,166,180,.45);border-radius:9px;padding:7px 12px 7px 9px;background:rgba(9,29,47,.43);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);box-shadow:0 4px 18px rgba(0,0,0,.22);cursor:grab;user-select:none;touch-action:none;font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap;will-change:left,top}
 .liquidation-float.is-dragging{cursor:grabbing;z-index:14;border-color:rgba(107,227,219,.78);box-shadow:0 8px 22px rgba(0,0,0,.35)}
 .float-grip{color:#76a7bc;font-size:13px;line-height:10px;pointer-events:none}
 .liquidation-float .live-title{font-size:10px;color:#bad6e1;pointer-events:none}
@@ -207,3 +207,14 @@ html,body{background:#071321}
 .cg-float-retry:hover{background:#205267;border-color:#67cbbf}
 .cg-float-retry:disabled{opacity:.4;cursor:wait}
 @media(max-width:780px){.liquidation-float{gap:5px}.cg-float-retry{width:19px;height:19px}}
+
+/* v0.8.6: mean-candle semantic color on compact capsules and detail, no ambiguous default blue. */
+.metric-capsule[data-ha-tone="yellow"]{border-color:rgba(240,199,73,.55);background:rgba(113,86,25,.17)}
+.metric-capsule[data-ha-tone="yellow"] b{color:#f3d15e}
+.metric-capsule[data-ha-tone="purple"]{border-color:rgba(185,126,245,.55);background:rgba(105,59,146,.17)}
+.metric-capsule[data-ha-tone="purple"] b{color:#c997fa}
+.metric-capsule[data-ha-tone="neutral"] b{color:#e1f8ff}
+#haColor[data-ha-tone="yellow"]{color:#f3d15e!important}
+#haColor[data-ha-tone="purple"]{color:#c997fa!important}
+#haWeight[data-ha-tone="purple"]{color:#c997fa}
+#haWeight[data-ha-tone="yellow"]{color:#f3d15e}

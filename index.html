@@ -6,12 +6,12 @@
 <meta content="width=device-width,initial-scale=1,viewport-fit=cover" name="viewport"/>
 <meta content="#0b111c" name="theme-color"/>
 <meta content="BTC 派網即時 K 線、CoinGlass 清算最大痛點、每日方向模型與 20:00 凍結。" name="description"/>
-<title>BTC 清算方向雷達 · v0.8.4</title>
+<title>BTC 清算方向雷達 · v0.8.6</title>
 <link href="./style.css" rel="stylesheet"/>
 </head>
 <body><div class="app-shell"><main class="market-stage"><div class="panel chart-panel tv-chart-panel dashboard-chart">
 <div class="chart-topbar">
-<div class="chart-identity"><strong>BTC 清算方向雷達</strong><span class="symbol-short">PIONEX · BTCUSDT.P</span><span class="header-version">v0.8.4</span><span class="header-live-price" id="priceNow">--</span></div>
+<div class="chart-identity"><strong>BTC 清算方向雷達</strong><span class="symbol-short">PIONEX · BTCUSDT.P</span><span class="header-version">v0.8.6</span><span class="header-live-price" id="priceNow">--</span></div>
 <div class="chart-actions">
 <div aria-label="K線週期" class="timeframe-switch" role="group"><button aria-pressed="true" class="active" id="chart4hBtn" type="button">4H</button><button aria-pressed="false" id="chart15mBtn" type="button">15M</button></div>
 <span class="state-pill waiting" id="marketPill"><span class="led"></span>正在連接行情</span>
@@ -40,8 +40,8 @@
 <div aria-label="計算主要依據，點選可查看完整內容" class="prob-capsules">
 <button class="metric-capsule popup-button" data-panel="model" type="button"><span>日線平均 K</span><b id="haPill">--</b></button>
 <button class="metric-capsule popup-button" data-panel="model" type="button"><span>08～16 基礎上掃</span><b id="basePill">--</b></button>
-<button class="metric-capsule popup-button" data-panel="model" type="button"><span>16～20 動態</span><b id="deltaPill">--</b></button>
-<button class="metric-capsule popup-button" data-panel="model" type="button"><span>HA 權重</span><b id="weightPill">--</b></button>
+<button class="metric-capsule popup-button" data-panel="model" title="上掃機率相對於08～16基礎值的差異，以百分比差值顯示" type="button"><span>16～20 機率差</span><b id="deltaPill">--</b></button>
+<button class="metric-capsule popup-button" data-panel="model" title="平均K對上掃機率的加減，直接用%表示加減幅度" type="button"><span>HA 權重</span><b id="weightPill">--</b></button>
 </div>
 <button class="mini-more popup-button" data-panel="model" type="button">機率依據 ↗</button>
 </div>
@@ -65,9 +65,9 @@
 <div><span>12～16 第二根4H</span><b id="fourH1216">--</b></div>
 <div><span>16～20 第三根4H</span><b id="fourH1620">--</b></div>
 <div><span>08～16 基礎上掃</span><b id="baseProb">--</b></div>
-<div><span>16～20 動態差異</span><b id="dynamicDelta">--</b></div>
+<div><span>16～20 動態差異（%）</span><b id="dynamicDelta">--</b></div>
 <div><span>日線平均 K（當下）</span><b id="haColor">--</b></div>
-<div><span>HA 加權</span><b id="haWeight">--</b></div>
+<div><span>HA 加權（%）</span><b id="haWeight">--</b></div>
 <div><span>模型代理上／下目標</span><b id="trainedTarget">--</b></div>
 </div><div class="prob-note" id="probNote">08:00～12:00、12:00～16:00 建立 8H 基礎；16:00～20:00 變動；20:00 凍結。只預測至少觸及一側時的先掃方向。</div></section><section class="drawer-page" hidden="" id="drawer-levels"><h3>20:00 凍結上下界／即時上下界</h3><div class="live-drawer-info"><span>CoinGlass 即時 24H（不凍結）</span><strong class="up" id="drawerLiveUp">--</strong><strong class="down" id="drawerLiveDown">--</strong><small id="drawerLiveTime">--</small></div><div class="zones-grid">
 <div class="panel zone-panel zone-up"><div class="zone-heading"><div><div class="eyebrow">SHORTS · ABOVE PRICE</div><h3>上方清算目標</h3></div><span class="zone-arrow">↗</span></div><div class="zone-list" id="upperList"></div></div>
