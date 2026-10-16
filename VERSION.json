@@ -1,9 +1,9 @@
 {
-  "version": "0.9.6",
+  "version": "0.9.7",
   "changes": [
-    "probability focus background softly breathes in very pale opposing green/red tones",
-    "winner side of the displayed probabilities enlarges both heading and percentage; loser side is modestly reduced",
-    "decorative center glow gently shifts, but displayed model probabilities and proportional bar remain unchanged",
-    "all CoinGlass, Pionex, Binance, Cloudflare Worker, R2 and scheduled logic unchanged"
+    "automatic public read-only R2 history when opening webpage, no manual URL/token input",
+    "Worker adds public history/status GET endpoints while writes remain Bearer protected",
+    "preserves consolidated Cloudflare Cron filtering at 20:02/07/12 and 08:10/20/30",
+    "keeps existing probability, price feeds, frozen-level logic unchanged"
   ]
 }
