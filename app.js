@@ -110,26 +110,44 @@
     if(binance)return {source:'binance',up:state.binance.upper.price,down:state.binance.lower.price};
     return {source:'none',up:null,down:null};
   }
+  // Official 20:00 R2 record only: the latest 24H quote must NEVER masquerade
+  // as a frozen price when today's cloud freeze is missing / still loading.
+  function frozenPriceRecord(session=chartSession()){
+    if(!session.frozenWindow)return null;
+    const row=state.snapshots.find(x=>x.id===session.day+'-20:00'&&x.kind==='auto'&&
+      x.day===session.day&&['cg','binance','proxy'].includes(x.mode)&&
+      Number(x.upper)>0&&Number(x.lower)>0&&Number(x.upper)>Number(x.lower)&&
+      Number(x.price)>0&&typeof x.r2FirstSavedAt==='string'&&x.r2FirstSavedAt.length>0);
+    return row||null;
+  }
   function calculateCurrentZones(){
+    const t=Date.now(),session=chartSession(t);
+    // A chosen manual source is explicitly a *manual overlay*; don't call it frozen.
     if(state.mode==='manual'){
-      state.effectiveBoundarySource='manual';
+      state.effectiveBoundarySource='manual';state.cgChartLevelMode='manual';
       state.zones={upper:state.manual.upper.map(p=>({price:p,distance:Math.abs(p/state.price-1),score:null,width:Math.max(50,state.price*.001),manual:true})).filter(z=>z.price>state.price).sort((a,b)=>a.distance-b.distance).slice(0,6),lower:state.manual.lower.map(p=>({price:p,distance:Math.abs(p/state.price-1),score:null,width:Math.max(50,state.price*.001),manual:true})).filter(z=>z.price<state.price).sort((a,b)=>a.distance-b.distance).slice(0,6)};
       return false;
     }
-    const t=Date.now(),session=chartSession(t),frozen=session.frozenWindow?
-      state.snapshots.find(x=>x.id===session.day+'-20:00'&&x.kind==='auto'&&
-        ['cg','binance','proxy'].includes(x.mode)&&Number(x.upper)>0&&Number(x.lower)>0):null;
-    const picked=boundaryData(t);
+    const frozen=frozenPriceRecord(session);
+    if(session.frozenWindow&&!frozen){
+      // Cloud snapshot is authoritative. While pending, intentionally show no
+      // chart/forecast boundary lines instead of leaking today's LIVE price.
+      state.cgChartLevelMode='awaiting-freeze';state.effectiveBoundarySource='none';
+      state.zones={upper:[],lower:[]};return false;
+    }
+    const picked=session.frozenWindow?null:boundaryData(t);
     const hasFrozen=Boolean(frozen);
-    const source=hasFrozen?(frozen.mode==='cg'?'cg': 'binance'):picked.source;
+    const source=hasFrozen?(frozen.mode==='cg'?'cg':frozen.mode==='binance'?'binance':'proxy'):picked.source;
     const up=hasFrozen?Number(frozen.upper):picked.up,down=hasFrozen?Number(frozen.lower):picked.down;
+    const basis=hasFrozen?Number(frozen.price):state.price;
     state.cgChartLevelMode=hasFrozen?'frozen':source!=='none'?'live':'none';
     state.effectiveBoundarySource=source;
-    const make=(price,dir)=>({price,distance:Math.abs(price/state.price-1),score:null,
-      width:Math.max(40,state.price*.00085),cg:source==='cg',binance:source==='binance',amount:hasFrozen?(dir==='upper'?Number(frozen.coinGlassLevelUpper):Number(frozen.coinGlassLevelLower)):(dir==='upper'?picked.upAmount:picked.downAmount),
-      frozen:hasFrozen,live:!hasFrozen,main:true,layer:source==='binance'?'L2':null});
+    const make=(price,dir)=>({price,distance:Math.abs(price/basis-1),score:null,
+      width:Math.max(40,basis*.00085),cg:source==='cg',binance:source==='binance',proxy:source==='proxy',
+      amount:hasFrozen?(dir==='upper'?Number(frozen.coinGlassLevelUpper):Number(frozen.coinGlassLevelLower)):(dir==='upper'?picked.upAmount:picked.downAmount),
+      basisPrice:basis,frozen:hasFrozen,live:!hasFrozen,main:true,layer:source==='binance'?'L2':null});
     state.zones={upper:up>0?[make(up,'upper')]:[],lower:down>0?[make(down,'lower')]:[]};
-    return source==='binance'&&state.binance?.all?.usedVolume===true;
+    return source==='binance'&&!hasFrozen&&state.binance?.all?.usedVolume===true;
   }
   function primary(z){return z.reduce((best,x)=>!best||((x.score??70)/(.7+Math.sqrt(x.distance*100))>(best.score??70)/(.7+Math.sqrt(best.distance*100)))?x:best,null);}
   function chooseRankLabel(z,i,p){return z===p?'主要':i===0?'第一':'延伸';}
@@ -137,14 +155,14 @@
     for(const dir of ['upper','lower']){
       const list=$(dir==='upper'?'upperList':'lowerList');list.replaceChildren();
       const z=state.zones[dir]||[];const main=primary(z);
-      if(!z.length){const el=document.createElement('div');el.className='empty-state';el.textContent=state.mode==='manual'?'請在右側輸入清算價位。':'CoinGlass 尚未成功或 Binance L2 尚未取得；請查看資料狀態。';list.append(el);continue;}
+      if(!z.length){const el=document.createElement('div');el.className='empty-state';el.textContent=state.cgChartLevelMode==='awaiting-freeze'?'等待雲端20:00凍結快照（即時24H仍在圖內浮卡更新）':state.mode==='manual'?'請在右側輸入清算價位。':'CoinGlass 尚未成功或 Binance L2 尚未取得；請查看資料狀態。';list.append(el);continue;}
       z.forEach((a,i)=>{
         const row=document.createElement('div');row.className='zone-row';
         const badge=document.createElement('div');badge.className='index-chip';badge.textContent='L'+(i+1);
         const mid=document.createElement('div');mid.className='zone-center';const val=document.createElement('strong');val.textContent=fmt(a.price);mid.append(val);
-        const meta=document.createElement('div');meta.className='zone-meta';meta.textContent=chooseRankLabel(a,i,main)+(a.cg?(a.frozen?' · 20:00 凍結 CoinGlass':' · CoinGlass 24H'):a.binance?(a.frozen?' · 20:00 凍結 Binance L2':' · Binance L2 · 假設清算帶'):a.manual?' · 手動輸入':' · 代理候選帶');mid.append(meta);
+        const meta=document.createElement('div');meta.className='zone-meta';meta.textContent=chooseRankLabel(a,i,main)+(a.cg?(a.frozen?' · 20:00 凍結 CoinGlass':' · CoinGlass 24H'):a.binance?(a.frozen?' · 20:00 凍結 Binance L2':' · Binance L2 · 假設清算帶'):a.proxy?' · 20:00 凍結模型代理目標':a.manual?' · 手動輸入':' · 代理候選帶');mid.append(meta);
         if(!a.manual&&!a.cg&&!a.binance){const strip=document.createElement('div');strip.className='score-strip';const fill=document.createElement('div');fill.className='score-fill';fill.style.width=Math.max(3,a.score)+'%';strip.append(fill);mid.append(strip);}
-        const side=document.createElement('div');side.className='zone-right';side.append(document.createTextNode(pct(a.price,state.price)));const tag=document.createElement('em');tag.textContent=a.cg?(a.amount?'名目 '+(a.amount/1000000).toFixed(2)+'M USD':'預估清算位置'):a.binance?'Binance K 線估算 · 非真實清算明細':a.manual?'人工標記':`代理強度 ${a.score}/100`;side.append(tag);
+        const side=document.createElement('div');side.className='zone-right';side.append(document.createTextNode(pct(a.price,a.frozen?a.basisPrice:state.price)));const tag=document.createElement('em');tag.textContent=a.cg?(a.amount?'名目 '+(a.amount/1000000).toFixed(2)+'M USD':'預估清算位置'):a.binance?'Binance K 線估算 · 非真實清算明細':a.manual?'人工標記':`代理強度 ${a.score}/100`;side.append(tag);
         row.append(badge,mid,side);list.append(row);
       });
     }
@@ -152,13 +170,14 @@
   function renderHeader(useVol){
     $('priceNow').textContent=fmt(state.price);$('priceSource').textContent=state.source==='demo'?state.sourceLabel:(state.priceSource||state.sourceLabel);
     const up=primary(state.zones.upper||[]),down=primary(state.zones.lower||[]);
-    $('boundUpper').textContent=up?fmt(up.price):'--';$('boundUpperDist').textContent=up?(up.live?'即時 · ':'')+pct(up.price,state.price):'尚無候選價位';
-    $('boundLower').textContent=down?fmt(down.price):'--';$('boundLowerDist').textContent=down?(down.live?'即時 · ':'')+pct(down.price,state.price):'尚無候選價位';
+    const freezeWaiting=state.cgChartLevelMode==='awaiting-freeze';
+    $('boundUpper').textContent=up?fmt(up.price):'--';$('boundUpperDist').textContent=up?(up.frozen?'凍結 · ':up.live?'即時 · ':'')+pct(up.price,up.frozen?up.basisPrice:state.price):freezeWaiting?'等待20:00快照':'尚無候選價位';
+    $('boundLower').textContent=down?fmt(down.price):'--';$('boundLowerDist').textContent=down?(down.frozen?'凍結 · ':down.live?'即時 · ':'')+pct(down.price,down.frozen?down.basisPrice:state.price):freezeWaiting?'等待20:00快照':'尚無候選價位';
     const t=Date.now(),frozenLabel=state.mode!=='manual'&&chartSession(t).frozenWindow;
     const hasFrozen=Boolean(frozenLabel&&state.zones.upper.some(z=>z.frozen));
     const effective=state.effectiveBoundarySource;
-    const origin=effective==='cg'?'CoinGlass':effective==='binance'?'Binance L2':'暫無';
-    const desc=hasFrozen?'20:00 凍結 '+origin:(effective==='none'?'尚未取得清算價':'即時 '+origin);
+    const origin=effective==='cg'?'CoinGlass':effective==='binance'?'Binance L2':effective==='proxy'?'模型代理目標':'暫無';
+    const desc=hasFrozen?'20:00 凍結 '+origin:freezeWaiting?'等待20:00雲端凍結快照':effective==='none'?'尚未取得清算價':'即時 '+origin;
     $('frozenUpperLabel').textContent=desc+' 上界';
     $('frozenLowerLabel').textContent=desc+' 下界';
     // Floating mini-panel always tracks CURRENT source, independent of chart freeze.
@@ -428,7 +447,7 @@
       const bg=lev.dir==='upper'?'#115849':'#6d3640';
       roundRect(ctx,g.axisX,place-11,g.axisWidth,22,4,bg,lev.color);
       ctx.fillStyle=lev.dir==='upper'?'#e1fff3':'#fff0f3';ctx.textBaseline='middle';ctx.textAlign='center';ctx.font='bold 11px Arial';
-      ctx.fillText((lev.live?'即時 ':'')+priceText(lev.price),g.axisX+g.axisWidth/2,place,g.axisWidth-6);
+      ctx.fillText((lev.live?'即時 ':'凍結 ')+priceText(lev.price),g.axisX+g.axisWidth/2,place,g.axisWidth-6);
     }
     if(hover){
       // Date/time badge (reference screenshot lower red rectangle).
@@ -708,6 +727,7 @@
   $('clearSnapshots').onclick=()=>{if(window.confirm('只清除這台裝置的本機快取，R2 雲端紀錄不會刪除，確定？')){state.snapshots=[];persistSnapshots();renderSnapshot();}};
   $('refreshButton').onclick=()=>{state.suppressLive=false;loadRealtime();loadCoinGlass();loadBinance();};
   $('demoButton').onclick=()=>{state.suppressLive=true;state.source='demo';state.sourceLabel='歷史離線示範；非派網即時行情';state.candles=readDemo();state.daily=readDemoDays();state.fourHCandles=[];state.price=state.candles.at(-1).c;state.cgPain=null;state.refreshIssue='已切換歷史示範模式';redraw();};
+  let lastAwaitingFreezePoll=0;
   function clockTick(){
     const now=tpeParts();$('twClock').textContent='台灣時間 '+now.text;
     if(!state.suppressLive){const t=Date.now();
@@ -721,10 +741,17 @@
     // even if quote/API requests fail and there is no price-update redraw.
     const key=chartSession().key;
     if(state.chartWindowKey!==key){state.chartWindowKey=key;redraw();}
+    // Cloud freeze is stored at 20:02 (or retry at 20:07/12). Poll briefly
+    // until that authoritative snapshot arrives, even if the UI stays open.
+    const session=chartSession(),clock=Date.now();
+    if(session.frozenWindow&&!frozenPriceRecord(session)&&cloud?.configured()&&
+        !cloudPulling&&clock-lastAwaitingFreezePoll>=15000){
+      lastAwaitingFreezePoll=clock;void pullCloud();
+    }
     maybeAutoFreeze();
   }
   
   setupCloudUI();restoreCoinGlassCache();state.snapshots=loadLocalSnapshots();state.candles=readDemo();state.daily=readDemoDays();state.price=state.candles.at(-1).c;redraw();clockTick();setInterval(clockTick,1000);
   setTimeout(loadRealtime,400);setTimeout(loadCoinGlass,700);setTimeout(loadBinance,1200);
-  window.BTC_RADAR_TEST={buildZones,parseLevels,tpeParts,scoreSettlements,loadCoinGlass,refreshTick,loadRealtime,chartSession,forceRedraw:redraw,clockTick,getState:()=>({liveCGUpper:state.cgPain?.short??null,liveCGLower:state.cgPain?.long??null,liveCGAt:state.cgAt,chartTf:state.chartTf,chart4HCount:state.fourHCandles.length,price:state.price,source:state.source,sourceLabel:state.sourceLabel,mode:state.mode,zones:state.zones,cgPain:state.cgPain,cgAt:state.cgAt,cgVersion:state.cgVersion,cgError:state.cgError,binance:state.binance,binanceAt:state.binanceAt,binanceError:state.binanceError,effectiveBoundarySource:state.effectiveBoundarySource,snapshots:state.snapshots,r2:cloud?.getState(),cgChartLevelMode:state.cgChartLevelMode,probability:state.probability,refreshIssue:state.refreshIssue})};
+  window.BTC_RADAR_TEST={buildZones,parseLevels,tpeParts,scoreSettlements,loadCoinGlass,refreshTick,loadRealtime,chartSession,forceRedraw:redraw,clockTick,getState:()=>({liveCGUpper:state.cgPain?.short??null,liveCGLower:state.cgPain?.long??null,liveCGAt:state.cgAt,chartTf:state.chartTf,chart4HCount:state.fourHCandles.length,price:state.price,source:state.source,sourceLabel:state.sourceLabel,mode:state.mode,zones:state.zones,cgPain:state.cgPain,cgAt:state.cgAt,cgVersion:state.cgVersion,cgError:state.cgError,binance:state.binance,binanceAt:state.binanceAt,binanceError:state.binanceError,effectiveBoundarySource:state.effectiveBoundarySource,snapshots:state.snapshots,r2:cloud?.getState(),cgChartLevelMode:state.cgChartLevelMode,frozenRecord:frozenPriceRecord(),probability:state.probability,refreshIssue:state.refreshIssue})};
 })();

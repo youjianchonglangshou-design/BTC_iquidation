@@ -1,9 +1,11 @@
 {
-  "version": "0.9.7",
+  "version": "0.9.8",
   "changes": [
-    "automatic public read-only R2 history when opening webpage, no manual URL/token input",
-    "Worker adds public history/status GET endpoints while writes remain Bearer protected",
-    "preserves consolidated Cloudflare Cron filtering at 20:02/07/12 and 08:10/20/30",
-    "keeps existing probability, price feeds, frozen-level logic unchanged"
+    "20:00-07:59 chart and main probability panel use only verified R2 frozen level prices",
+    "if no verified R2 freeze exists do not fall back to live CoinGlass/Binance for chart/main target levels",
+    "live draggable 24h quote panel continues updating independently",
+    "frozen distance percentages use the 20:00 frozen reference price",
+    "extra 15-second cloud polling when awaiting freeze; 08:00 returns to live levels",
+    "probability model, Worker, R2, browser capture and scheduled jobs unchanged"
   ]
 }
