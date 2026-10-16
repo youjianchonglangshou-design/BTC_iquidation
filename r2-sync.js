@@ -6,7 +6,7 @@
  try{config={...config,...JSON.parse(localStorage.getItem(CONFIG_KEY)||'{}')};}catch{}
  let notify=()=>{};
  let state={phase:'idle',message:config.url?'待連線':'尚未設定 R2',lastSync:0,count:0};
- let pulling=false,writing=new Map();
+ let pulling=false,writing=new Map(),quoteWriting=new Map();
  const emit=()=>notify({...state});
  const base=()=>config.url.replace(/\/+$/,'').replace(/\/api\/btc-liq\/records$/,'');
  const configured=()=>Boolean(config.url&&config.token);
@@ -38,6 +38,7 @@
   }catch(e){setState('error','R2 同步失敗：'+(e.message||e));throw e;}
   finally{pulling=false;}
  }
+ async function status(){return await api('/api/btc-liq/status');}
  async function push(record){
   if(!configured()||record?.kind!=='auto')return null;
   const active=writing.get(record.id);
@@ -57,6 +58,32 @@
   finally{writing.delete(record.id);}
  }
 
+
+ // Upload directly observed, decoded CoinGlass prices. They are independent of
+ // frozen predictions, and never claim a 20:00 quote when the browser was closed.
+ async function pushQuote(quote){
+  if(!configured())throw Error('R2 未連線；CoinGlass JSON 尚未上傳');
+  const at=Number(quote?.observedAt);
+  const upper=Number(quote?.upper),lower=Number(quote?.lower);
+  if(!Number.isFinite(at)||!Number.isFinite(upper)||!Number.isFinite(lower)||!(upper>lower&&lower>0))throw Error('清算價 JSON 無效');
+  const minute=new Date(at).toISOString().slice(0,16);
+  if(quoteWriting.has(minute))return quoteWriting.get(minute);
+  const promise=(async()=>{
+   const result=await api('/api/btc-liq/quotes',{method:'PUT',body:JSON.stringify({
+    source:'CoinGlass',range:'24h',observedAt:at,upper,lower,
+    referencePrice:Number(quote.referencePrice)||null,
+    upperAmount:Number(quote.upperAmount)||null,lowerAmount:Number(quote.lowerAmount)||null,
+    version:String(quote.version??'unknown').slice(0,12)
+   })});
+   setState('ok',`CoinGlass JSON 已同步 R2 · ${new Date(at).toLocaleTimeString('zh-TW',{hour12:false,timeZone:'Asia/Taipei'})}`,{lastSync:Date.now()});
+   return result.quote;
+  })();
+  quoteWriting.set(minute,promise);
+  try{return await promise;}
+  catch(e){setState('error','CoinGlass JSON 同步失敗：'+e.message);throw e;}
+  finally{quoteWriting.delete(minute);}
+ }
+
  function save(url,token){
   const cleaned=url.trim().replace(/\/+$/,'');validate(cleaned,token.trim());
   config={url:cleaned,token:token.trim()};localStorage.setItem(CONFIG_KEY,JSON.stringify(config));
@@ -66,5 +93,5 @@
  const getConfig=()=>({...config});
  const getState=()=>({...state});
  const subscribe=callback=>{notify=callback;emit();};
- window.BTCR2Records={save,forget,pull,push,configured,getConfig,getState,subscribe,autoRows};
+ window.BTCR2Records={save,forget,pull,push,pushQuote,status,configured,getConfig,getState,subscribe,autoRows};
 })();

@@ -1,4 +1,4 @@
-/* BTC LIQUIDITY RADAR v0.9.0 - CoinGlass preferred, Binance original v0.1 L2 fallback. */
+/* BTC LIQUIDITY RADAR v0.9.2 - CoinGlass preferred, Binance original v0.1 L2 fallback. */
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
@@ -491,10 +491,17 @@
     }
     keepCloudPending();
   }
+  async function updateCloudJobStatus(){
+    const el=$('cloudJobStatus');if(!el||!cloud?.configured())return;
+    try{const response=await cloud.status();const x=response.status;
+      el.textContent=x?(x.ok?'雲端排程正常':'雲端排程失敗')+' · '+(x.task==='freeze'?'20:00 凍結':x.task==='settle'?'08:00 結算':'檢查')+' · '+(x.day||'')+' · '+(x.at||'')+(x.error?' · '+x.error:''):'雲端排程尚無執行紀錄';
+      el.dataset.phase=x?(x.ok?'ok':'error'):'idle';
+    }catch(e){el.textContent='雲端排程狀態：'+String(e.message||e);el.dataset.phase='error';}
+  }
   async function pullCloud(){
     if(!cloud?.configured()||cloudPulling)return;
     cloudPulling=true;
-    try{applyCloudRecords(await cloud.pull());await flushCloudPending();}catch(_){/* status remains visible */}
+    try{applyCloudRecords(await cloud.pull());await flushCloudPending();await updateCloudJobStatus();}catch(_){/* status remains visible */}
     finally{cloudPulling=false;cloudStatus();}
   }
   function pushCloud(record){
@@ -520,7 +527,7 @@
       try{
         const url=$('r2WorkerUrl').value.trim();
         const key=$('r2AccessKey').value.trim()||cloud.getConfig().token;
-        cloud.save(url,key);$('r2AccessKey').value='';await pullCloud();
+        cloud.save(url,key);$('r2AccessKey').value='';await pullCloud();if(lastObservedJson&&Date.now()-lastObservedJson.observedAt<180000)void syncObservedQuote(lastObservedJson);
       }catch(e){$('r2SyncStatus').textContent='R2 設定失敗：'+e.message;$('r2SyncStatus').dataset.phase='error';}
     };
     $('r2Refresh').onclick=pullCloud;
@@ -720,6 +727,28 @@
       }
     }catch(_){}
   }
+  let lastObservedJson=null;
+  let lastQuoteUploadedMinute='';
+  let quoteSending=false;
+  const mirrorQuoteJson=(quote)=>{
+    lastObservedJson=quote;
+    const el=$('capturedQuoteJson');
+    if(el)el.value=JSON.stringify(quote,null,2);
+    const status=$('quoteJsonStatus');
+    if(status)status.textContent=cloud?.configured()?'待同步 R2':'僅在此瀏覽器擷取；R2 未連線';
+  };
+  async function syncObservedQuote(quote){
+    if(!cloud?.configured()||quoteSending)return;
+    const minute=new Date(quote.observedAt).toISOString().slice(0,16);
+    if(minute===lastQuoteUploadedMinute)return;
+    quoteSending=true;
+    try{
+      await cloud.pushQuote(quote);
+      lastQuoteUploadedMinute=minute;
+      const el=$('quoteJsonStatus');if(el)el.textContent='已自動存入 R2 · '+tpeTime(quote.observedAt,true);
+    }catch(e){const el=$('quoteJsonStatus');if(el)el.textContent='R2 未寫入：'+e.message;}
+    finally{quoteSending=false;}
+  }
   async function loadCoinGlass(){
     if(state.cgBusy||state.suppressLive)return;
     state.cgBusy=true;state.refreshCGAt=Date.now();redraw();
@@ -730,6 +759,13 @@
       if(!result||!(result.short>0&&result.long>0))throw Error('CoinGlass JSON 沒有有效 BTC 上下界');
       state.cgPain=result;state.cgAt=Date.now();state.cgVersion=raw.version;state.cgError='';state.cgFailures=0;
       try{localStorage.setItem(CG_CACHE_KEY,JSON.stringify({at:state.cgAt,data:result,version:state.cgVersion}));}catch(_){}
+      // This is the REAL observed data path, not a reconstructed/estimated CoinGlass quote.
+      const captured={source:'CoinGlass',range:'24h',observedAt:state.cgAt,
+        upper:Number(result.short),lower:Number(result.long),
+        upperAmount:Number(result.shortAmount)||null,lowerAmount:Number(result.longAmount)||null,
+        referencePrice:Number(result.referencePrice)||null,version:String(raw.version||'unknown')};
+      mirrorQuoteJson(captured);
+      void syncObservedQuote(captured);
     }catch(e){
       state.cgFailures++;
       if(!state.suppressLive&&Date.now()-state.refreshBinanceAt>=15000)loadBinance();
@@ -769,6 +805,7 @@
     if(state.chartWindowKey!==key){state.chartWindowKey=key;redraw();}
     maybeAutoFreeze();
   }
+  const copyJsonButton=$('copyCapturedQuoteJson');if(copyJsonButton)copyJsonButton.onclick=()=>{if(!lastObservedJson)return;const text=JSON.stringify(lastObservedJson,null,2);if(navigator.clipboard?.writeText)navigator.clipboard.writeText(text).then(()=>{const el=$('quoteJsonStatus');if(el)el.textContent='JSON 已複製';}).catch(()=>{$('capturedQuoteJson').focus();$('capturedQuoteJson').select();});else{$('capturedQuoteJson').focus();$('capturedQuoteJson').select();}};
   setupCloudUI();restoreCoinGlassCache();state.snapshots=loadLocalSnapshots();state.candles=readDemo();state.daily=readDemoDays();state.price=state.candles.at(-1).c;redraw();clockTick();setInterval(clockTick,1000);
   setTimeout(loadRealtime,400);setTimeout(loadCoinGlass,700);setTimeout(loadBinance,1200);
   window.BTC_RADAR_TEST={buildZones,parseLevels,tpeParts,scoreSettlements,loadCoinGlass,refreshTick,loadRealtime,chartSession,forceRedraw:redraw,clockTick,getState:()=>({liveCGUpper:state.cgPain?.short??null,liveCGLower:state.cgPain?.long??null,liveCGAt:state.cgAt,chartTf:state.chartTf,chart4HCount:state.fourHCandles.length,price:state.price,source:state.source,sourceLabel:state.sourceLabel,mode:state.mode,zones:state.zones,cgPain:state.cgPain,cgAt:state.cgAt,cgVersion:state.cgVersion,cgError:state.cgError,binance:state.binance,binanceAt:state.binanceAt,binanceError:state.binanceError,effectiveBoundarySource:state.effectiveBoundarySource,snapshots:state.snapshots,r2:cloud?.getState(),cgChartLevelMode:state.cgChartLevelMode,probability:state.probability,refreshIssue:state.refreshIssue})};
