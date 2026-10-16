@@ -218,3 +218,16 @@ html,body{background:#071321}
 #haColor[data-ha-tone="purple"]{color:#c997fa!important}
 #haWeight[data-ha-tone="purple"]{color:#c997fa}
 #haWeight[data-ha-tone="yellow"]{color:#f3d15e}
+
+/* Cloudflare R2 only appears inside the existing history drawer; main screen stays unchanged. */
+.r2-panel{margin:10px 0 12px;padding:12px;border:1px solid #2b5265;background:#0d2638;border-radius:11px;color:#d6edf5;font-size:12px}
+.r2-panel-head{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:11px}
+.r2-panel-head strong{font-size:13px}.r2-panel-head small{font-size:11px;color:#a9b9c8;text-align:right}
+#r2SyncStatus[data-phase="ok"]{color:#66d6b0}#r2SyncStatus[data-phase="error"]{color:#fc9195}
+.r2-panel-fields{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px}
+.r2-panel-fields label{display:block;color:#91abbf;font-size:11px}
+.r2-panel-fields input{display:block;box-sizing:border-box;width:100%;min-width:0;margin-top:6px;background:#06182a;color:#def5ff;border:1px solid #31516d;border-radius:7px;padding:9px 10px;font:inherit}
+.r2-panel-fields input:focus{outline:2px solid #34a5ae;outline-offset:1px}
+.r2-panel-buttons{display:flex;gap:6px;flex-wrap:wrap}.r2-panel-buttons button{font-size:11px}
+.r2-panel p{color:#8babc1;line-height:1.55;font-size:10px;margin:9px 0 0}
+@media(max-width:650px){.r2-panel-fields{grid-template-columns:1fr}}

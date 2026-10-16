@@ -1,0 +1,16 @@
+BTC Liquidity Radar  v0.8.9 → v0.9.0
+
+【覆蓋】
+index.html
+app.js
+style.css
+VERSION.json
+
+【新增】
+r2-sync.js
+
+【Cloudflare Worker 專用（新建，不要覆蓋原有其他用途 Worker）】
+worker/worker.js
+worker/wrangler.toml.example
+
+注意：只複製網頁檔案尚未連接 R2。必須到 Cloudflare 把現有 Bucket 綁給 Worker，新增 Secret BTC_RECORDS_TOKEN，再在網頁「▤ 紀錄」填 Worker URL 與同步金鑰。

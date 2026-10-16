@@ -1,0 +1,15 @@
+name = "btc-liq-r2-records"
+main = "worker/worker.js"
+compatibility_date = "2026-10-16"
+
+# Replace with your existing R2 bucket name. Never write secrets into this file.
+[[r2_buckets]]
+binding = "BTC_RECORDS"
+bucket_name = "YOUR_EXISTING_R2_BUCKET"
+
+[vars]
+ALLOWED_ORIGINS = "https://youjianchonglangshou-design.github.io"
+ALLOW_LOCAL_FILE = "true"
+
+# Secret BTC_RECORDS_TOKEN must be set in Cloudflare (not committed to GitHub):
+# npx wrangler secret put BTC_RECORDS_TOKEN
