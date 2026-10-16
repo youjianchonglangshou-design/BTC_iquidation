@@ -1,21 +1,9 @@
 {
-  "name": "BTC CoinGlass × Pionex Liquidity Radar",
-  "version": "0.9.0",
-  "date": "2026-10-16",
-  "base": "0.8.9",
-  "scope": "Move per-day 20:00 freeze and next-08:00 settlement records to Cloudflare R2 through authenticated Worker, preserving local offline cache and original market/model/visual layout.",
-  "boundaries": "CoinGlass 24h Max Pain or Binance BTCUSDT 15m proxy L2; Binance futures preferred, second futures endpoint then marked spot fallback; historical 20:00 freeze source preserved",
-  "market": "PIONEX BTC_USDT_PERP quote and PIONEX:BTCUSDT.P 4H/15M/day candles unchanged",
-  "probability": "Unchanged 39-feature historical proxy direction model with 4.5 percentage point HA adjustment",
-  "freeze": "20:00 Asia/Taipei snapshot until next 07:59; 08:00 resumes live source; no retroactive Coinglass/Binance level reconstruction",
-  "files": [
-    "index.html",
-    "app.js",
-    "style.css",
-    "VERSION.json",
-    "r2-sync.js",
-    "worker/worker.js",
-    "worker/wrangler.toml.example"
-  ],
-  "storage": "R2 per day, immutable freeze fields; settlement fill-in; manual local-history import; per-device Worker URL + bearer token; 3-minute cloud refresh; pending offline retries."
+  "version": "0.9.3",
+  "changes": [
+    "dedicated CoinGlass headless-capture page",
+    "Cloudflare Browser Run executes temporary page on 19:55–19:59 TPE schedule",
+    "validated snapshot saved to same R2 key read by v0.9.2 freeze",
+    "existing Pionex probability model and Binance L2 fallback unchanged"
+  ]
 }

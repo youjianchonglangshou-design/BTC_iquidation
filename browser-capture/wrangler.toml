@@ -1,0 +1,18 @@
+name = "btc-liq-browser-capture"
+main = "src/index.js"
+compatibility_date = "2026-10-16"
+workers_dev = true
+
+[browser]
+binding = "BROWSER"
+
+[[r2_buckets]]
+binding = "BTC_RECORDS"
+bucket_name = "btc-liq-records"
+
+[vars]
+CAPTURE_URL = "https://youjianchonglangshou-design.github.io/BTC_liquidation/capture.html"
+
+[triggers]
+# Asia/Taipei 19:55-19:59 == UTC 11:55-11:59
+crons = ["55-59 11 * * *"]
