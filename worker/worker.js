@@ -1,8 +1,11 @@
+import { runScheduled, readPre20CoinGlass } from './auto_jobs.js';
 /** BTC Liquidity Radar R2 snapshot bridge v0.9.0. One R2 object per Taiwan 20:00 session.
  * R2 binding: BTC_RECORDS; secret: BTC_RECORDS_TOKEN; env ALLOWED_ORIGINS optional.
  * The write token is NEVER placed in the public GitHub repo / JavaScript.
  */
 const ROOT='/api/btc-liq/records';
+const QUOTES_ROOT='/api/btc-liq/quotes';
+const QUOTES_PREFIX='btc-liq/v1/coinglass/';
 const PREFIX='btc-liq/v1/freeze/';
 const DATE_RE=/^20\d\d-\d\d-\d\d$/;
 const TEXT_FIELDS=['id','day','created','kind','source','mode','liquidationSource','coinGlassAt','ha','freezeMethod','confidence'];
@@ -49,6 +52,31 @@ export default {
   const authorization=request.headers.get('Authorization')||'';
   if(!authorization.startsWith('Bearer ')||!await tokenMatch(authorization.slice(7),String(env.BTC_RECORDS_TOKEN)))return reply({ok:false,error:'授權失敗；請確認此裝置的 R2 同步金鑰'},401);
   const path=new URL(request.url).pathname;
+  if(path===QUOTES_ROOT&&request.method==='PUT'){
+   // Browser captures are accepted only near their actual receipt time.
+   // Server-received UTC time determines the immutable minute key.
+   let raw;try{const body=await request.text();if(body.length>3000)throw Error('payload too large');raw=JSON.parse(body);}catch{return reply({ok:false,error:'JSON 格式無效'},400);}
+   const at=Number(raw.observedAt),now=Date.now(),upper=Number(raw.upper),lower=Number(raw.lower);
+   const version=String(raw.version||'unknown');
+   if(raw.source!=='CoinGlass'||raw.range!=='24h'||!Number.isFinite(at)||Math.abs(now-at)>120000||
+     !(Number.isFinite(upper)&&Number.isFinite(lower)&&upper>lower&&lower>0)||upper>20000000||
+     !/^(0|1|2|55|66|77)$/.test(version))return reply({ok:false,error:'無效或過期的 CoinGlass 擷取資料'},400);
+   const recv=new Date(now),day=recv.toISOString().slice(0,10),minute=recv.toISOString().slice(11,16).replace(':','');
+   const key=QUOTES_PREFIX+day+'/'+minute+'.json';
+   const item={source:'CoinGlass',range:'24h',upper,lower,observedAt:new Date(at).toISOString(),
+    receivedAt:recv.toISOString(),version,referencePrice:Number(raw.referencePrice)||null,
+    upperAmount:Number(raw.upperAmount)||null,lowerAmount:Number(raw.lowerAmount)||null,
+    provenance:'Browser-decoded live data; not verified by CoinGlass API'};
+   try{
+    const result=await env.BTC_RECORDS.put(key,JSON.stringify(item),{
+     httpMetadata:{contentType:'application/json'},onlyIf:new Headers({'If-None-Match':'*'})});
+    return reply({ok:true,status:result?'saved':'minute-exists',quote:item},result?201:200);
+   }catch(e){return reply({ok:false,error:'CoinGlass JSON 寫入 R2 失敗：'+String(e.message||e).slice(0,180)},502);}
+  }
+  if(path==='/api/btc-liq/status'&&request.method==='GET'){
+   const status=await env.BTC_RECORDS.get('btc-liq/v1/status/last-run.json');
+   return reply({ok:true,status:status?JSON.parse(await status.text()):null});
+  }
   if(path===ROOT&&request.method==='GET'){
    const pageSize=200;
    const cursor=new URL(request.url).searchParams.get('cursor');
@@ -88,8 +116,21 @@ export default {
       }
       return reply({ok:true,status:'unchanged',record:prior});
     }
+    // If browser also froze the day, use the server-stored pre-20 CoinGlass
+    // observation instead of trusting a later Binance fallback or client fields.
+    const pre20=await readPre20CoinGlass(env,day);
+    if(pre20){
+      record.mode='cg';record.liquidationSource='CoinGlass 24H · R2 20:00前保存';
+      record.upper=Number(pre20.upper);record.lower=Number(pre20.lower);
+      record.upperAll=String(pre20.upper);record.lowerAll=String(pre20.lower);
+      record.coinGlassAt=new Date(Date.parse(pre20.receivedAt)+28800000).toISOString().replace('T',' ').slice(0,19);
+      record.coinGlassLevelUpper=pre20.upperAmount||'';record.coinGlassLevelLower=pre20.lowerAmount||'';
+      record.freezeMethod='Worker 使用 20:00 前 R2 CoinGlass JSON';
+    }else if(!(Number(record.upper)>0&&Number(record.lower)>0)){
+      return reply({ok:false,error:'本機凍結缺少有效上下界，請等待 Worker 排程補存'},422);
+    }
     record.r2FirstSavedAt=new Date().toISOString();
-    record.storageProvenance='Browser submitted; not an exchange-verified historical snapshot';
+    record.storageProvenance=pre20?'R2 pre-20 CoinGlass JSON; browser supplied probability':'Browser submitted; not an exchange-verified historical snapshot';
     const created=await env.BTC_RECORDS.put(key,JSON.stringify(record),{
      httpMetadata:{contentType:'application/json'},onlyIf:new Headers({'If-None-Match':'*'})
     });
@@ -98,5 +139,8 @@ export default {
    }catch(e){return reply({ok:false,error:'R2 寫入失敗',detail:String(e.message||e).slice(0,200)},502);}
   }
   return reply({ok:false,error:'找不到 API 路徑'},404);
+ },
+ async scheduled(controller,env,ctx){
+  ctx.waitUntil(runScheduled(controller,env));
  }
 };
