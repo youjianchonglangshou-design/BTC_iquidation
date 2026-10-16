@@ -26,6 +26,33 @@
   new MutationObserver(syncHATone).observe(haSource,{childList:true,characterData:true,subtree:true});
   syncHATone();
 
+  // v0.9.6 — visual emphasis only. Read displayed probabilities; do not alter the model.
+  const probCard=$('probShell'), upValue=$('upProb'), downValue=$('downProb');
+  const upSide=upValue?.closest('.prob-side'), downSide=downValue?.closest('.prob-side');
+  function syncProbabilityBalance(){
+    if(!probCard||!upValue||!downValue||!upSide||!downSide)return;
+    const upText=upValue.textContent.trim(), downText=downValue.textContent.trim();
+    const up=Number.parseFloat(upText),down=Number.parseFloat(downText);
+    const valid=upText.endsWith('%')&&downText.endsWith('%')&&Number.isFinite(up)&&Number.isFinite(down)
+      &&up>=0&&up<=100&&down>=0&&down<=100;
+    const leader=!valid?'none':up>down?'up':down>up?'down':'even';
+    probCard.dataset.leader=leader;
+    for(const side of [upSide,downSide])side.classList.remove('is-leading','is-trailing');
+    if(leader==='up'||leader==='down'){
+      (leader==='up'?upSide:downSide).classList.add('is-leading');
+      (leader==='up'?downSide:upSide).classList.add('is-trailing');
+    }
+    // The decorative center remains close to 50%; the actual data ratio is the horizontal bar.
+    const pct=valid?Math.max(44,Math.min(56,50+(up-50)*.30)):50;
+    probCard.style.setProperty('--balance-center',pct.toFixed(2)+'%');
+  }
+  if(probCard&&upValue&&downValue){
+    const observer=new MutationObserver(syncProbabilityBalance);
+    observer.observe(upValue,{childList:true,characterData:true,subtree:true});
+    observer.observe(downValue,{childList:true,characterData:true,subtree:true});
+    syncProbabilityBalance();
+  }
+
   const host = $('chartArea'), float = $('liveTargetFloat');
   if (!host || !float) return;
   const STORE = 'btc-liq-24h-float-position-v082';

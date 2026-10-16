@@ -286,3 +286,111 @@ html,body{background:#071321}
 @media(max-width:1180px) and (min-width:781px){.decision-ribbon-v094{grid-template-columns:minmax(0,1.12fr) minmax(315px,.9fr)}.context-capsules{grid-template-columns:repeat(2,minmax(0,1fr))}.context-capsules .metric-capsule{min-height:56px}.timeline-label{font-size:16px}}
 @media(max-height:740px) and (min-width:781px){.decision-ribbon-v094{height:172px}.timeline-card{min-height:70px}.context-shell,.probability-focus-card{padding-top:9px;padding-bottom:9px}.context-capsules .metric-capsule{min-height:58px;padding-top:9px;padding-bottom:8px}}
 @media(max-width:780px){.decision-ribbon-v094{display:flex;flex-direction:column;height:auto;gap:8px}.context-shell{padding:9px 10px}.context-shell-head strong{font-size:12px}.context-capsules{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.context-capsules .metric-capsule{padding:8px 8px 7px;min-height:54px}.context-capsules .metric-capsule b{font-size:13px}.timeline-card{padding:8px 8px 6px}.phase-timeline{padding:2px 4px 0}.timeline-track{left:4px;right:4px}.timeline-label{font-size:15px}.probability-focus-card{padding:9px 10px}.probability-focus-card .prob-side>strong{font-size:clamp(40px,11vw,50px)}}
+
+
+/* v0.9.6 — subtle opposing ambient glow, live leading-side typography.
+   The decorative seam is NOT a second probability indicator; only the bottom bar is proportional. */
+.probability-focus-card{
+  position:relative;isolation:isolate;overflow:hidden;
+  background:linear-gradient(105deg,#0b2c32 0%,#0e2934 48%,#172434 100%);
+  --balance-center:50%;
+}
+.probability-focus-card .prob-ambient{
+  position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0;border-radius:inherit;
+}
+.probability-focus-card .prob-ambient-up,
+.probability-focus-card .prob-ambient-down{
+  position:absolute;top:-30%;bottom:-35%;width:75%;will-change:transform,opacity;
+  filter:blur(12px);opacity:.68;
+}
+.probability-focus-card .prob-ambient-up{
+  left:-20%;
+  background:radial-gradient(ellipse at 43% 57%,rgba(37,173,134,.17) 0%,rgba(29,120,106,.075) 36%,transparent 73%);
+  animation:probBreatheUp 11s ease-in-out infinite alternate;
+}
+.probability-focus-card .prob-ambient-down{
+  right:-20%;
+  background:radial-gradient(ellipse at 57% 57%,rgba(218,91,115,.145) 0%,rgba(146,57,91,.067) 37%,transparent 73%);
+  animation:probBreatheDown 11s ease-in-out infinite alternate;
+}
+/* A restrained glow intersection drifts a few pixels, never covering labels. */
+.probability-focus-card .prob-ambient-seam{
+  position:absolute;left:var(--balance-center);top:22%;bottom:12%;width:32px;
+  transform:translateX(-50%);opacity:.45;
+  background:linear-gradient(90deg,transparent 0%,rgba(66,224,190,.16) 42%,rgba(174,204,197,.14) 50%,rgba(236,110,133,.16) 58%,transparent 100%);
+  filter:blur(11px);
+  transition:left 1.8s ease-in-out;
+  animation:probTugSeam 11s ease-in-out infinite alternate;
+}
+.probability-focus-card[data-leader="up"] .prob-ambient-up{opacity:.88}
+.probability-focus-card[data-leader="down"] .prob-ambient-down{opacity:.87}
+.probability-focus-card[data-leader="none"] .prob-ambient-up,
+.probability-focus-card[data-leader="none"] .prob-ambient-down{opacity:.4}
+.probability-focus-card>.decision-top,
+.probability-focus-card>.prob-results,
+.probability-focus-card>.prob-track{
+  position:relative;z-index:1;
+}
+.probability-focus-card .prob-side .prob-direction,
+.probability-focus-card .prob-side>strong{
+  transition:font-size .85s cubic-bezier(.22,.7,.26,1),opacity .85s ease,text-shadow .85s ease;
+}
+.probability-focus-card .prob-side>strong{
+  font-size:clamp(40px,3.45vw,52px);
+  white-space:nowrap;
+}
+.probability-focus-card .prob-side .prob-direction{font-size:11px}
+.probability-focus-card .prob-side.is-leading>strong{
+  font-size:clamp(46px,3.9vw,58px);
+  text-shadow:0 0 15px rgba(81,218,190,.11);
+}
+.probability-focus-card .prob-side.down.is-leading>strong{
+  text-shadow:0 0 15px rgba(245,130,145,.14);
+}
+.probability-focus-card .prob-side.is-leading .prob-direction{font-size:14px;color:#d9f4ee}
+.probability-focus-card .prob-side.down.is-leading .prob-direction{color:#ffe3e7}
+.probability-focus-card .prob-side.is-trailing>strong{
+  font-size:clamp(37px,3.14vw,46px);opacity:.91;text-shadow:none;
+}
+.probability-focus-card .prob-side.is-trailing .prob-direction{font-size:11px;opacity:.8}
+.probability-focus-card .prob-track{box-shadow:0 0 9px rgba(60,212,176,.08)}
+.probability-focus-card .prob-up-fill{transition:width .95s cubic-bezier(.2,.8,.2,1)}
+@keyframes probBreatheUp{
+  0%{transform:translate3d(-4px,0,0) scale(1);opacity:.52}
+  50%{transform:translate3d(7px,1px,0) scale(1.055);opacity:.85}
+  100%{transform:translate3d(15px,-1px,0) scale(1.09);opacity:.59}
+}
+@keyframes probBreatheDown{
+  0%{transform:translate3d(4px,0,0) scale(1.07);opacity:.66}
+  50%{transform:translate3d(-7px,-1px,0) scale(1.02);opacity:.85}
+  100%{transform:translate3d(-15px,1px,0) scale(1);opacity:.48}
+}
+@keyframes probTugSeam{
+  0%{transform:translateX(calc(-50% - 6px));opacity:.27}
+  50%{transform:translateX(calc(-50% + 3px));opacity:.52}
+  100%{transform:translateX(calc(-50% + 7px));opacity:.26}
+}
+@media(max-width:1180px) and (min-width:781px){
+  .probability-focus-card .prob-side>strong{font-size:clamp(36px,3.8vw,45px)}
+  .probability-focus-card .prob-side.is-leading>strong{font-size:clamp(40px,4.2vw,52px)}
+  .probability-focus-card .prob-side.is-trailing>strong{font-size:clamp(32px,3.4vw,40px)}
+}
+@media(max-width:780px){
+  .probability-focus-card .prob-side>strong{font-size:clamp(36px,8.4vw,49px)}
+  .probability-focus-card .prob-side.is-leading>strong{font-size:clamp(40px,9.5vw,55px)}
+  .probability-focus-card .prob-side.is-trailing>strong{font-size:clamp(32px,7.5vw,43px)}
+}
+@media(prefers-reduced-motion:reduce){
+  .probability-focus-card .prob-ambient-up,
+  .probability-focus-card .prob-ambient-down,
+  .probability-focus-card .prob-ambient-seam{animation:none!important}
+  .probability-focus-card .prob-side .prob-direction,
+  .probability-focus-card .prob-side>strong,
+  .probability-focus-card .prob-up-fill{transition:none!important}
+}
+/* Mobile: preserve the narrative order (flow cards first, timeline second). */
+@media(max-width:780px){
+  .context-shell .context-shell-head{order:0}
+  .context-shell .context-capsules{order:1}
+  .context-shell .timeline-card{order:2}
+}

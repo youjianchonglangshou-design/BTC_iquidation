@@ -1,9 +1,9 @@
 {
-  "version": "0.9.5",
+  "version": "0.9.6",
   "changes": [
-    "timeline segments between 08→12→16→20 now visualize done, active-flow, and pending states",
-    "left-side evidence capsules redesigned into four clearer process cards",
-    "probability board remains on the right as the focused result panel",
-    "data and probability logic remain unchanged; only presentation is upgraded"
+    "probability focus background softly breathes in very pale opposing green/red tones",
+    "winner side of the displayed probabilities enlarges both heading and percentage; loser side is modestly reduced",
+    "decorative center glow gently shifts, but displayed model probabilities and proportional bar remain unchanged",
+    "all CoinGlass, Pionex, Binance, Cloudflare Worker, R2 and scheduled logic unchanged"
   ]
 }

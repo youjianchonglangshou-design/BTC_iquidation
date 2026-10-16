@@ -6,12 +6,12 @@
 <meta content="width=device-width,initial-scale=1,viewport-fit=cover" name="viewport"/>
 <meta content="#0b111c" name="theme-color"/>
 <meta content="BTC 派網即時 K 線、CoinGlass 清算最大痛點、每日方向模型與 20:00 凍結。" name="description"/>
-<title>BTC 清算方向雷達 · v0.9.5</title>
+<title>BTC 清算方向雷達 · v0.9.6</title>
 <link href="./style.css" rel="stylesheet"/>
 </head>
 <body><div class="app-shell"><main class="market-stage"><div class="panel chart-panel tv-chart-panel dashboard-chart">
 <div class="chart-topbar">
-<div class="chart-identity"><strong>BTC 清算方向雷達</strong><span class="symbol-short">PIONEX · BTCUSDT.P</span><span class="header-version">v0.9.5</span><span class="header-live-price" id="priceNow">--</span></div>
+<div class="chart-identity"><strong>BTC 清算方向雷達</strong><span class="symbol-short">PIONEX · BTCUSDT.P</span><span class="header-version">v0.9.6</span><span class="header-live-price" id="priceNow">--</span></div>
 <div class="chart-actions">
 <div aria-label="K線週期" class="timeframe-switch" role="group"><button aria-pressed="true" class="active" id="chart4hBtn" type="button">4H</button><button aria-pressed="false" id="chart15mBtn" type="button">15M</button></div>
 <span class="state-pill waiting" id="marketPill"><span class="led"></span>正在連接行情</span>
@@ -63,7 +63,12 @@
 </div>
 </div>
 </section>
-<section aria-label="BTC 上下清算方向機率" class="prob-shell single-prob-card probability-focus-card" id="probShell">
+<section aria-label="BTC 上下清算方向機率" class="prob-shell single-prob-card probability-focus-card" id="probShell" data-leader="none">
+<div class="prob-ambient" aria-hidden="true">
+<span class="prob-ambient-up"></span>
+<span class="prob-ambient-down"></span>
+<span class="prob-ambient-seam"></span>
+</div>
 <div class="decision-top decision-top-v094">
 <div class="decision-name"><h2>先掃方向</h2><span class="phase-chip" id="phaseChip">等待基礎</span></div>
 </div>
