@@ -1,0 +1,7 @@
+從 v0.8.6 升級到 v0.8.7 — 覆蓋四個檔案：
+coinglass-decrypt.js
+app.js
+index.html
+VERSION.json
+
+其餘不必覆蓋。若使用 GitHub Pages，重新整理或 Ctrl+F5 清除舊快取。

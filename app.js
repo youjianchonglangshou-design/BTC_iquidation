@@ -1,4 +1,4 @@
-/* BTC LIQUIDITY RADAR v0.8.6 - 08:00~20:00 live / 20:00~08:00 frozen chart; live float never freezes. */
+/* BTC LIQUIDITY RADAR v0.8.7 - 6-version CoinGlass decoder; original UI/model/freeze unchanged. */
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
@@ -161,7 +161,7 @@
     const conciseError=()=>{
       const e=String(state.cgError||'讀取失敗');
       if(/data=null|無清算資料/.test(e))return '來源無資料';
-      if(/解碼|AES|GZIP|padding|加密版本|尚未支援|V0|V1|V2/i.test(e))return '解碼失敗';
+      if(/解碼|AES|GZIP|padding|加密版本|尚未支援|V0|V1|V2|V55|V66|V77/i.test(e))return '解碼失敗';
       if(/缺少.*user|缺少.*v/.test(e))return '回應格式改變';
       if(/AbortError|逾時|timeout/.test(e))return '讀取逾時';
       if(/Failed to fetch|NetworkError|Load failed|網路|CORS/i.test(e))return '連線受限';
@@ -565,7 +565,7 @@
       const prev=JSON.parse(localStorage.getItem(CG_CACHE_KEY)||'null');
       if(prev&&Number.isFinite(prev.at)&&prev.at<=Date.now()&&Date.now()-prev.at<86400000&&
           Number(prev.data?.short)>0&&Number(prev.data?.long)>0&&Number(prev.data.short)>Number(prev.data.long)){
-        state.cgPain=prev.data;state.cgAt=prev.at;state.cgVersion=/^[012]$/.test(String(prev.version))?String(prev.version):null;
+        state.cgPain=prev.data;state.cgAt=prev.at;state.cgVersion=/^(?:0|1|2|55|66|77)$/.test(String(prev.version))?String(prev.version):null;
         state.cgError='上次保存的價格；正在重新連線';
       }
     }catch(_){}

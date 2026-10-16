@@ -1,6 +1,7 @@
-/* CoinGlass v0/v1/v2 reader (v0.8.4). AES-128-ECB + gzip, two-layer decoding.
-   Key0: v=0 from request cache-ts-v2; v=1 from URL path; v=2 from response time.
-   The endpoint is undocumented and may change. No captured private tokens embedded. */
+/* CoinGlass V0/V1/V2/V55/V66/V77 reader (v0.8.7). AES-128-ECB + gzip, two-layer decoding.
+   Key0: V0 from request Cache-Ts-V2; V1 from URL path; V2 from response Time;
+   V55/V66/V77 use historical fixed seeds supplied in user-tested v0.2.3.
+   Undocumented endpoint; no private credentials embedded; fail closed on unknown versions. */
 (function(global){
 'use strict';
 const S=new Uint8Array(256), I=new Uint8Array(256), R=new Uint8Array(11);R[1]=1;
@@ -18,6 +19,14 @@ function decryptECB(data,key){if(data.length%16)throw Error('AES data not multip
 function b64(s){const binary=atob(String(s).replace(/\s/g,''));return Uint8Array.from(binary,c=>c.charCodeAt(0));}
 async function gunzip(bytes){if(typeof DecompressionStream==='undefined')throw Error('此瀏覽器不支援 GZIP DecompressionStream');const ds=new DecompressionStream('gzip');const stream=new Blob([bytes]).stream().pipeThrough(ds);return new Uint8Array(await new Response(stream).arrayBuffer());}
 const td=new TextDecoder(),te=new TextEncoder();
+// Historical values documented in user's CoinGlass v0.2.3 source package.
+// Valid ONLY when response header V explicitly matches the key.
+const LEGACY_SEEDS=Object.freeze({
+  '55':'170b070da9654622',
+  '66':'d6537d845a964081',
+  '77':'863f08689c97435b'
+});
+const SUPPORTED_VERSIONS=Object.freeze(['0','1','2','55','66','77']);
 async function decryptPayload(body,user,v,path,options={}){
  const version=String(v).trim();
  let seed;
@@ -29,7 +38,9 @@ async function decryptPayload(body,user,v,path,options={}){
  }else if(version==='2'){
   seed=String(options.timeHeader||'');
   if(!seed)throw Error('CoinGlass V2 缺少可讀取的回應 Time 標頭（可能是 CORS 或 API 改版）');
- }else throw Error('CoinGlass 尚未支援加密版本 V'+version);
+ }else if(Object.prototype.hasOwnProperty.call(LEGACY_SEEDS,version)){
+  seed=LEGACY_SEEDS[version];
+ }else throw Error('CoinGlass 尚未支援加密版本 V'+version+'；已支援 V'+SUPPORTED_VERSIONS.join('／V'));
  // btoa() of the ASCII seed, then first 16 characters used as literal AES key bytes.
  const key0=te.encode(btoa(seed).slice(0,16));
  const keyText=td.decode(await gunzip(decryptECB(b64(user),key0))).trim();
@@ -80,5 +91,5 @@ function readMaxPain(data){
  scan(data,0);return found;
 }
 
-global.CoinGlassReader={fetchCoinGlass,decryptPayload,readMaxPain,_test:{decryptECB,expand,b64}};
+global.CoinGlassReader={fetchCoinGlass,decryptPayload,readMaxPain,supportedVersions:SUPPORTED_VERSIONS,_test:{decryptECB,expand,b64,LEGACY_SEEDS}};
 })(window);
