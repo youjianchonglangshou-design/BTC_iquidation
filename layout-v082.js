@@ -87,4 +87,57 @@
   // Width may change when CoinGlass updates -- keep it in the chart boundaries.
   new ResizeObserver(restore).observe(float);
   requestAnimationFrame(restore);
+
+
+  // v0.9.4 layout-only timeline sync: reflects 08→12→16→20 progression.
+  const timelineIds=['08','12','16','20'];
+  const phaseChip=$('phaseChip'), timelineStateLabel=$('timelineStateLabel');
+  const TPE_CLOCK = new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Taipei',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
+  const timelineNodes=Object.fromEntries(timelineIds.map(k=>[k,$('timeline'+k)]));
+  const timelineSegments=[
+    { id:'segment08_12', start:480, end:720 },
+    { id:'segment12_16', start:720, end:960 },
+    { id:'segment16_20', start:960, end:1200 }
+  ].map(seg=>({ ...seg, el:$(seg.id) }));
+  function tpeMinuteNow(){
+    const parts={};
+    for(const p of TPE_CLOCK.formatToParts(new Date())) if(p.type!=='literal') parts[p.type]=p.value;
+    return Number(parts.hour||0)*60 + Number(parts.minute||0);
+  }
+  function syncTimeline(){
+    if(!timelineNodes['08']) return;
+    const minute=tpeMinuteNow();
+    const marks={ '08':480, '12':720, '16':960, '20':1200 };
+    let active='08';
+    if(minute>=marks['20']) active='20';
+    else if(minute>=marks['16']) active='16';
+    else if(minute>=marks['12']) active='12';
+    const frozen=/20:00.*凍結|已凍結|20:00 已凍結/.test((phaseChip?.textContent||'').trim());
+    for(const key of timelineIds){
+      const el=timelineNodes[key]; if(!el) continue;
+      el.classList.remove('is-done','is-active','is-frozen','is-pending');
+      if(minute>marks[key] || (key!==active && minute>=marks[key])) el.classList.add('is-done');
+      else el.classList.add('is-pending');
+    }
+    const activeEl=timelineNodes[active];
+    if(activeEl){
+      activeEl.classList.remove('is-pending');
+      activeEl.classList.add(frozen && active==='20' ? 'is-frozen' : 'is-active');
+    }
+    for(const seg of timelineSegments){
+      if(!seg.el) continue;
+      seg.el.classList.remove('is-done','is-active','is-frozen');
+      if(minute>=seg.end){
+        seg.el.classList.add(frozen && seg.end===1200 ? 'is-frozen' : 'is-done');
+      }else if(minute>=seg.start && minute<seg.end){
+        seg.el.classList.add('is-active');
+      }
+    }
+    if(timelineStateLabel){
+      timelineStateLabel.textContent = frozen ? '20:00 凍結完成' : active==='20' ? '20:00 凍結視窗' : active==='16' ? '16～20 動態觀察' : active==='12' ? '12～16 累積基礎' : '08～12 起始區間';
+    }
+  }
+  if(phaseChip){ new MutationObserver(syncTimeline).observe(phaseChip,{childList:true,characterData:true,subtree:true}); }
+  syncTimeline();
+  setInterval(syncTimeline, 15000);
 })();

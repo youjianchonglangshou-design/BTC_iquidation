@@ -1,9 +1,9 @@
 {
-  "version": "0.9.3",
+  "version": "0.9.5",
   "changes": [
-    "dedicated CoinGlass headless-capture page",
-    "Cloudflare Browser Run executes temporary page on 19:55–19:59 TPE schedule",
-    "validated snapshot saved to same R2 key read by v0.9.2 freeze",
-    "existing Pionex probability model and Binance L2 fallback unchanged"
+    "timeline segments between 08→12→16→20 now visualize done, active-flow, and pending states",
+    "left-side evidence capsules redesigned into four clearer process cards",
+    "probability board remains on the right as the focused result panel",
+    "data and probability logic remain unchanged; only presentation is upgraded"
   ]
 }

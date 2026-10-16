@@ -6,12 +6,12 @@
 <meta content="width=device-width,initial-scale=1,viewport-fit=cover" name="viewport"/>
 <meta content="#0b111c" name="theme-color"/>
 <meta content="BTC 派網即時 K 線、CoinGlass 清算最大痛點、每日方向模型與 20:00 凍結。" name="description"/>
-<title>BTC 清算方向雷達 · v0.9.3</title>
+<title>BTC 清算方向雷達 · v0.9.5</title>
 <link href="./style.css" rel="stylesheet"/>
 </head>
 <body><div class="app-shell"><main class="market-stage"><div class="panel chart-panel tv-chart-panel dashboard-chart">
 <div class="chart-topbar">
-<div class="chart-identity"><strong>BTC 清算方向雷達</strong><span class="symbol-short">PIONEX · BTCUSDT.P</span><span class="header-version">v0.9.3</span><span class="header-live-price" id="priceNow">--</span></div>
+<div class="chart-identity"><strong>BTC 清算方向雷達</strong><span class="symbol-short">PIONEX · BTCUSDT.P</span><span class="header-version">v0.9.5</span><span class="header-live-price" id="priceNow">--</span></div>
 <div class="chart-actions">
 <div aria-label="K線週期" class="timeframe-switch" role="group"><button aria-pressed="true" class="active" id="chart4hBtn" type="button">4H</button><button aria-pressed="false" id="chart15mBtn" type="button">15M</button></div>
 <span class="state-pill waiting" id="marketPill"><span class="led"></span>正在連接行情</span>
@@ -33,19 +33,41 @@
 </div>
 </div>
 <span hidden="" id="modelTag"></span><span hidden="" id="lastUpdated"></span><span hidden="" id="priceSource"></span>
-</div><div class="decision-ribbon">
-<section aria-label="BTC 上下清算方向機率" class="prob-shell single-prob-card" id="probShell">
-<div class="decision-top">
-<div class="decision-name"><h2>先掃方向</h2><span class="phase-chip" id="phaseChip">等待基礎</span></div>
-<div aria-label="計算主要依據，點選可查看完整內容" class="prob-capsules">
-<button class="metric-capsule popup-button" data-panel="model" type="button"><span>日線平均 K</span><b id="haPill">--</b></button>
-<button class="metric-capsule popup-button" data-panel="model" type="button"><span>08～16 基礎上掃</span><b id="basePill">--</b></button>
-<button class="metric-capsule popup-button" data-panel="model" title="上掃機率相對於08～16基礎值的差異，以百分比差值顯示" type="button"><span>16～20 機率差</span><b id="deltaPill">--</b></button>
-<button class="metric-capsule popup-button" data-panel="model" title="平均K對上掃機率的加減，直接用%表示加減幅度" type="button"><span>HA 權重</span><b id="weightPill">--</b></button>
-</div>
+</div><div class="decision-ribbon decision-ribbon-v094">
+<section aria-label="模型依據與時間歷程" class="context-shell" id="contextShell">
+<div class="context-shell-head">
+<strong>模型脈絡</strong>
 <button class="mini-more popup-button" data-panel="model" type="button">機率依據 ↗</button>
 </div>
-<div class="prob-results">
+<div aria-label="計算主要依據，點選可查看完整內容" class="prob-capsules context-capsules">
+<button class="metric-capsule popup-button" data-panel="model" type="button"><span>08～16 基礎上掃</span><b id="basePill">--</b></button>
+<button class="metric-capsule popup-button" data-panel="model" title="上掃機率相對於08～16基礎值的差異，以百分比差值顯示" type="button"><span>16～20 機率差</span><b id="deltaPill">--</b></button>
+<button class="metric-capsule popup-button" data-panel="model" type="button"><span>日線平均 K</span><b id="haPill">--</b></button>
+<button class="metric-capsule popup-button" data-panel="model" title="平均K對上掃機率的加減，直接用%表示加減幅度" type="button"><span>HA 權重</span><b id="weightPill">--</b></button>
+</div>
+<div class="timeline-card">
+<div class="timeline-caption-row">
+<span class="timeline-caption">時間歷程</span>
+<small id="timelineStateLabel">08 → 12 → 16 → 20</small>
+</div>
+<div aria-label="08 到 20 的觀察時間節點" class="phase-timeline" id="phaseTimeline">
+<div class="timeline-track" aria-hidden="true">
+<span class="timeline-segment" id="segment08_12"></span>
+<span class="timeline-segment" id="segment12_16"></span>
+<span class="timeline-segment" id="segment16_20"></span>
+</div>
+<div class="timeline-stop" data-key="08" id="timeline08"><span class="timeline-dot"></span><span class="timeline-label">08</span></div>
+<div class="timeline-stop" data-key="12" id="timeline12"><span class="timeline-dot"></span><span class="timeline-label">12</span></div>
+<div class="timeline-stop" data-key="16" id="timeline16"><span class="timeline-dot"></span><span class="timeline-label">16</span></div>
+<div class="timeline-stop" data-key="20" id="timeline20"><span class="timeline-dot"></span><span class="timeline-label">20</span></div>
+</div>
+</div>
+</section>
+<section aria-label="BTC 上下清算方向機率" class="prob-shell single-prob-card probability-focus-card" id="probShell">
+<div class="decision-top decision-top-v094">
+<div class="decision-name"><h2>先掃方向</h2><span class="phase-chip" id="phaseChip">等待基礎</span></div>
+</div>
+<div class="prob-results prob-results-v094">
 <button class="prob-side up popup-button" data-panel="levels" title="查看20:00凍結上下界與即時清算價" type="button">
 <span class="prob-direction">先上掃 <span class="sr-only" id="frozenUpperLabel">CoinGlass 上界</span></span>
 <span class="prob-target"><b id="boundUpper">--</b><small id="boundUpperDist">--</small></span>
