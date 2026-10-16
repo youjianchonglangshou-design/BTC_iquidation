@@ -196,6 +196,48 @@
     // UTC 00:00 = Taipei 08:00; after UTC midnight, a NEW day's foundation starts.
     return now;
   }
+  // HA is a DAILY market indicator, not a gated 16:00 probability output.
+  // Compute it at the observation time from completed Pionex daily history plus
+  // the *currently forming* UTC day candle. Never borrow the future daily close.
+  function currentHA(){
+    if(!window.BTCLiqEngine?.getHA)return {ready:false,reason:'平均 K 引擎未載入'};
+    const when=observedTPE();
+    const day=Math.floor(when/86400000)*86400000;
+    const prior=state.daily.filter(x=>x.t<day).sort((a,b)=>a.t-b.t);
+    if(prior.length<25)return {ready:false,reason:state.modelError||'派網歷史日 K 不足 25 天'};
+    const intraday=state.candles.filter(k=>k.t>=day&&k.t<when).sort((a,b)=>a.t-b.t);
+    let liveDay=null;
+    if(intraday.length&&intraday[0].t===day){
+      liveDay={t:day,o:intraday[0].o,h:Math.max(...intraday.map(x=>x.h)),
+        l:Math.min(...intraday.map(x=>x.l)),c:intraday.at(-1).c};
+      // A fresh Pionex quote may update the unfinished candle before its next 15M refresh.
+      if(state.source!=='demo'&&Number.isFinite(state.price)&&state.price>0&&
+          Number.isFinite(state.priceAt)&&Date.now()-state.priceAt<120000){
+        liveDay.c=state.price;liveDay.h=Math.max(liveDay.h,state.price);
+        liveDay.l=Math.min(liveDay.l,state.price);
+      }
+    }else{
+      // First seconds after 08:00, the 15M feed may not have its new bar yet.
+      // Pionex 1D's OPEN CURRENT candle is a safe source at that point.
+      const fromPionex=state.daily.find(x=>x.t===day);
+      if(fromPionex)liveDay={...fromPionex};
+    }
+    if(!liveDay)return {ready:false,reason:state.modelError||'等待當日派網 15M／日 K'};
+    const ha=window.BTCLiqEngine.getHA([...prior,liveDay],when);
+    return ha?{...ha,ready:true,at:when}:{ready:false,reason:'平均 K 無法由當下資料計算'};
+  }
+  function showCurrentHA(){
+    const ha=currentHA(),node=$('haColor');
+    if(ha.ready){
+      node.textContent=ha.color+(ha.priorColor?`（前日${ha.priorColor}）`:'');
+      node.style.color=ha.color==='黃'?'#f5d36b':'#d3a7f8';
+      node.title=`派網日線平均 K · ${tpeTime(ha.at)} 觀測；當日尚未收線，顏色可能變化`;
+    }else{
+      node.textContent='--';node.style.color='';
+      node.title='平均 K 暫無法計算：'+ha.reason;
+    }
+    return ha;
+  }
   function calcProbability(){
     if(!window.BTCLiqEngine||!state.candles.length)return null;
     const obs=observedTPE();const day=Math.floor(obs/86400000)*86400000;
@@ -218,11 +260,13 @@
     return {...cur,baseUp:foundation.ready?foundation.modelUp:null,day,phase:obs>=t20?'frozen':'dynamic',asof,price:cur.features?state.candles.filter(x=>x.t+900000<=asof).at(-1)?.c:null};
   }
   function showProbability(){
+    // HA is ALWAYS updated separately, including 08:00–16:00 and post-freeze.
+    showCurrentHA();
     const item=calcProbability();state.probability=item;
     const chip=$('phaseChip');const note=$('probNote');
     chip.className='phase-chip';
     if(!item||!item.ready){
-      $('upProb').textContent='--';$('downProb').textContent='--';$('fourH0812').textContent='--';$('fourH1216').textContent='--';$('fourH1620').textContent='--';$('baseProb').textContent='--';$('dynamicDelta').textContent='--';$('haColor').textContent='--';$('haWeight').textContent='--';$('trainedTarget').textContent='--';
+      $('upProb').textContent='--';$('downProb').textContent='--';$('fourH0812').textContent='--';$('fourH1216').textContent='--';$('fourH1620').textContent='--';$('baseProb').textContent='--';$('dynamicDelta').textContent='--';$('haWeight').textContent='--';$('trainedTarget').textContent='--';
       $('probUpFill').style.width='50%';chip.textContent='等待有效資料';
       $('probAsOf').textContent=state.source==='demo'?'離線示範 / 資料不足':'模型尚未就緒';
       note.textContent=item?.reason||'需要 Pionex 15M 歷史資料與日 K；不顯示猜測機率。';
@@ -238,8 +282,6 @@
     $('baseProb').textContent=Number.isFinite(item.baseUp)?(100*item.baseUp).toFixed(2)+'%':'--';
     const diff=Number.isFinite(item.baseUp)?100*(item.modelUp-item.baseUp):null;
     $('dynamicDelta').textContent=Number.isFinite(diff)?(diff>=0?'+':'')+diff.toFixed(2)+'%':'--';
-    $('haColor').textContent=item.haColor+(item.haPriorColor?`（前日${item.haPriorColor}）`:'');
-    $('haColor').style.color=item.haColor==='黃'?'#f5d36b':'#d3a7f8';
     $('haWeight').textContent=(item.haDelta>0?'+':'')+(item.haDelta*100).toFixed(2)+'%';
     $('trainedTarget').textContent=fmt(item.modelTargets.upper)+' / '+fmt(item.modelTargets.lower);
     $('probAsOf').textContent=`${tpeTime(item.asof)} · ${state.source==='demo'?'離線研究快照':frozen?'凍結時點':'即時觀察'}`;
@@ -523,6 +565,7 @@
       const raw=await window.PionexFeed.klines('15',520);
       const arr=normalizeNativeBars(raw.bars,'派網15M');
       if(Date.now()-arr.at(-1).t>3600000)throw Error('Pionex 15M 歷史過期超過一小時');
+      if(state.source==='demo')state.daily=[]; // Never pass offline demo HA history to live Pionex.
       state.source='pionex';state.sourceLabel=raw.source;state.candles=arr;
       state.price=arr.at(-1).c;state.priceAt=Date.now();state.liveAt=Date.now();state.refreshKAt=Date.now();
       state.suppressLive=false;state.refreshIssue=raw.warning||'';
@@ -557,7 +600,7 @@
       const raw=await window.PionexFeed.klines('1D',240);
       state.daily=normalizeNativeBars(raw.bars,'派網日K');state.refreshHAAt=Date.now();state.modelError='';
       if(raw.warning)state.refreshIssue=raw.warning;
-    }catch(e){state.modelError='派網日K無法更新 '+String(e.message||e);state.daily=[];}
+    }catch(e){state.modelError='派網日K無法更新 '+String(e.message||e);/* Keep any previously validated Pionex day history on transient failure. */}
   }
   const CG_CACHE_KEY='btc-cg24h-last-success-v083';
   function restoreCoinGlassCache(){

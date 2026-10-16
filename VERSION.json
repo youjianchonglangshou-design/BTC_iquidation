@@ -1,9 +1,9 @@
 {
   "name": "BTC CoinGlass × Pionex Liquidity Radar",
-  "version": "0.8.7",
+  "version": "0.8.8",
   "date": "2026-10-16",
-  "base": "0.8.6",
-  "scope": "Add CoinGlass V55/V66/V77 decoder branches alongside V0/V1/V2; no chart, probability, HA, polling, frozen-target or UI redesign changes.",
+  "base": "0.8.7",
+  "scope": "Fix HA capsule mistakenly hidden whenever probability is gated before 16:00. Standalone observable HA computed throughout session from Pionex daily history + current Pionex candle.",
   "coinglass_protocol": {
     "v0": "request Cache-Ts-V2",
     "v1": "API path",
@@ -16,7 +16,6 @@
   "probability_model": "unchanged 39-feature logistic model + HA +/-4.5 percentage points",
   "freeze": "20:00 Asia/Taipei through next 07:59:59 freeze snapshot; 08:00 chart resumes live CoinGlass; floating quote remains live 24h",
   "file_changes": [
-    "coinglass-decrypt.js",
     "app.js",
     "index.html",
     "VERSION.json"

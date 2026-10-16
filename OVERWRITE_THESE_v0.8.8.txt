@@ -1,0 +1,4 @@
+原版本 v0.8.7
+覆蓋：app.js、index.html、VERSION.json
+原本 coinglass-decrypt.js、pionex-feed.js、probability_engine.js 等保留。
+更新後 Ctrl+F5 清除快取。
