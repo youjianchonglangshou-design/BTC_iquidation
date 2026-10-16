@@ -1,7 +1,0 @@
-從 v0.8.3 升級至 v0.8.4，覆蓋：
-coinglass-decrypt.js
-app.js
-index.html
-VERSION.json
-
-其它檔案完全不變。請保留舊版 localStorage 快照與設定；更新程式不會清空。
