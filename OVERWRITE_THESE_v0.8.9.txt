@@ -1,0 +1,5 @@
+從 v0.8.8 升級 v0.8.9：
+覆蓋：app.js、index.html、VERSION.json
+新增：binance-l2.js
+其他檔案維持原樣。把四個檔案放在 GitHub Pages 專案根目錄（與原 index.html 同層）。
+更新後 Ctrl+F5 強制重新整理。

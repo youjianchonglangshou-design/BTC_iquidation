@@ -1,15 +1,15 @@
-/* BTC LIQUIDITY RADAR v0.8.7 - 6-version CoinGlass decoder; original UI/model/freeze unchanged. */
+/* BTC LIQUIDITY RADAR v0.8.9 - CoinGlass preferred, Binance original v0.1 L2 fallback. */
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
   const TPE_FMT = new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'});
   const priceFmt = new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const PRICE_INTERVAL = 10000, KLINE_INTERVAL = 60000, COINGLASS_INTERVAL = 60000, HA_INTERVAL = 300000;
+  const PRICE_INTERVAL = 10000, KLINE_INTERVAL = 60000, COINGLASS_INTERVAL = 60000, BINANCE_INTERVAL = 60000, HA_INTERVAL = 300000;
   const LEGAL_LEVERAGES = [{n:25,w:.28},{n:50,w:.34},{n:75,w:.24},{n:100,w:.14}];
   const MM_RATE_ASSUMPTION = .004; // Illustrative rate, not actual exchange liquidation schedule.
   const state = {
     candles:[],fourHCandles:[],fourHSource:'',chartTf:'4h',hoverPoint:null,price:null,priceAt:null,source:'demo',sourceLabel:'歷史示範',mode:'cg',zones:{upper:[],lower:[]},
-    maxDistance:.06,binRatio:.0018,manual:{upper:[],lower:[]},oi:null,refreshIssue:'',liveAt:null,cgPain:null,cgAt:0,cgFailures:0,cgError:'尚未取得 CoinGlass 資料',cgBusy:false,cgVersion:null,refreshCGAt:0,
+    maxDistance:.06,binRatio:.0018,manual:{upper:[],lower:[]},oi:null,refreshIssue:'',liveAt:null,cgPain:null,cgAt:0,cgFailures:0,cgError:'尚未取得 CoinGlass 資料',cgBusy:false,cgVersion:null,refreshCGAt:0,binance:null,binanceAt:0,binanceError:'尚未讀取 Binance L2',binanceBusy:false,refreshBinanceAt:0,effectiveBoundarySource:'none',
     suppressLive:false,loading:false,refreshKAt:0,refreshPAt:0,hoverIndex:-1,
     snapshots:[],chartGeometry:null,daily:[],probability:null,baseProb:null,refreshHAAt:0,modelError:'',lastProbCalcAt:0,chartWindowKey:null
   };
@@ -96,33 +96,40 @@
     return {start,day:new Date(start).toISOString().slice(0,10),frozenWindow,
       key:start+':'+(frozenWindow?'frozen':'live')};
   }
+  const isValidBinance = (t=Date.now()) => Boolean(state.binance&&state.binanceAt>0&&t-state.binanceAt>=0&&t-state.binanceAt<180000&&
+    state.binance.upper?.price>state.binance.referencePrice&&state.binance.lower?.price<state.binance.referencePrice);
+  const isValidCoinGlass = (t=Date.now()) => Boolean(!state.cgError&&state.cgPain&&!state.suppressLive&&state.cgAt>0&&
+    t-state.cgAt>=0&&t-state.cgAt<180000&&Number(state.cgPain.short)>0&&Number(state.cgPain.long)>0);
+  function boundaryData(t=Date.now(),ignoreMode=false){
+    const cg=isValidCoinGlass(t);
+    const binance=isValidBinance(t);
+    if(state.mode==='manual'&&!ignoreMode)return {source:'manual',up:null,down:null};
+    if(state.mode==='binance'&&!ignoreMode)return binance?{source:'binance',up:state.binance.upper.price,down:state.binance.lower.price}: {source:'none',up:null,down:null};
+    if(cg)return {source:'cg',up:state.cgPain.short,down:state.cgPain.long,
+      upAmount:state.cgPain.shortAmount,downAmount:state.cgPain.longAmount};
+    if(binance)return {source:'binance',up:state.binance.upper.price,down:state.binance.lower.price};
+    return {source:'none',up:null,down:null};
+  }
   function calculateCurrentZones(){
-    if(state.mode==='cg'){
-      const t=Date.now(),{day,frozenWindow}=chartSession(t);
-      const frozen=frozenWindow?state.snapshots.find(x=>x.id===day+'-20:00'&&x.mode==='cg'):null;
-      const hasFrozen=Boolean(frozenWindow&&frozen&&Number(frozen.upper)>0&&Number(frozen.lower)>0);
-      const freshCG=Boolean(state.cgPain&&state.cgAt>0&&t-state.cgAt>=0&&t-state.cgAt<180000&&
-        Number(state.cgPain.short)>0&&Number(state.cgPain.long)>0&&!state.suppressLive);
-      // Frozen price takes precedence. Without a valid 20:00 boundary snapshot, show
-      // CURRENT CoinGlass levels as LIVE, explicitly never pretending they were frozen.
-      const d=hasFrozen?{
-        short:Number(frozen.upper),long:Number(frozen.lower),
-        shortAmount:Number(frozen.coinGlassLevelUpper),longAmount:Number(frozen.coinGlassLevelLower)
-      }:freshCG?state.cgPain:null;
-      state.cgChartLevelMode=hasFrozen?'frozen':freshCG?'live':'none';
-      const mk=(price,amount)=>({price,distance:Math.abs(price/state.price-1),score:null,
-        width:Math.max(40,state.price*.00085),cg:true,amount,
-        frozen:hasFrozen,live:!hasFrozen,main:true});
-      state.zones={upper:d&&d.short>0?[mk(d.short,d.shortAmount)]:[],
-        lower:d&&d.long>0?[mk(d.long,d.longAmount)]:[]};
-      return false;
-    }
     if(state.mode==='manual'){
+      state.effectiveBoundarySource='manual';
       state.zones={upper:state.manual.upper.map(p=>({price:p,distance:Math.abs(p/state.price-1),score:null,width:Math.max(50,state.price*.001),manual:true})).filter(z=>z.price>state.price).sort((a,b)=>a.distance-b.distance).slice(0,6),lower:state.manual.lower.map(p=>({price:p,distance:Math.abs(p/state.price-1),score:null,width:Math.max(50,state.price*.001),manual:true})).filter(z=>z.price<state.price).sort((a,b)=>a.distance-b.distance).slice(0,6)};
       return false;
     }
-    const z=buildZones(state.candles,state.price);
-    state.zones={upper:z.upper,lower:z.lower};return z.usedVolume;
+    const t=Date.now(),session=chartSession(t),frozen=session.frozenWindow?
+      state.snapshots.find(x=>x.id===session.day+'-20:00'&&x.kind==='auto'&&
+        ['cg','binance','proxy'].includes(x.mode)&&Number(x.upper)>0&&Number(x.lower)>0):null;
+    const picked=boundaryData(t);
+    const hasFrozen=Boolean(frozen);
+    const source=hasFrozen?(frozen.mode==='cg'?'cg': 'binance'):picked.source;
+    const up=hasFrozen?Number(frozen.upper):picked.up,down=hasFrozen?Number(frozen.lower):picked.down;
+    state.cgChartLevelMode=hasFrozen?'frozen':source!=='none'?'live':'none';
+    state.effectiveBoundarySource=source;
+    const make=(price,dir)=>({price,distance:Math.abs(price/state.price-1),score:null,
+      width:Math.max(40,state.price*.00085),cg:source==='cg',binance:source==='binance',amount:hasFrozen?(dir==='upper'?Number(frozen.coinGlassLevelUpper):Number(frozen.coinGlassLevelLower)):(dir==='upper'?picked.upAmount:picked.downAmount),
+      frozen:hasFrozen,live:!hasFrozen,main:true,layer:source==='binance'?'L2':null});
+    state.zones={upper:up>0?[make(up,'upper')]:[],lower:down>0?[make(down,'lower')]:[]};
+    return source==='binance'&&state.binance?.all?.usedVolume===true;
   }
   function primary(z){return z.reduce((best,x)=>!best||((x.score??70)/(.7+Math.sqrt(x.distance*100))>(best.score??70)/(.7+Math.sqrt(best.distance*100)))?x:best,null);}
   function chooseRankLabel(z,i,p){return z===p?'主要':i===0?'第一':'延伸';}
@@ -130,14 +137,14 @@
     for(const dir of ['upper','lower']){
       const list=$(dir==='upper'?'upperList':'lowerList');list.replaceChildren();
       const z=state.zones[dir]||[];const main=primary(z);
-      if(!z.length){const el=document.createElement('div');el.className='empty-state';el.textContent=state.mode==='manual'?'請在右側輸入清算價位。':state.mode==='cg'?'CoinGlass 暫未取得可用的該側清算價；請查看連線診斷。':'目前沒有符合所選距離的代理候選價位。';list.append(el);continue;}
+      if(!z.length){const el=document.createElement('div');el.className='empty-state';el.textContent=state.mode==='manual'?'請在右側輸入清算價位。':'CoinGlass 尚未成功或 Binance L2 尚未取得；請查看資料狀態。';list.append(el);continue;}
       z.forEach((a,i)=>{
         const row=document.createElement('div');row.className='zone-row';
         const badge=document.createElement('div');badge.className='index-chip';badge.textContent='L'+(i+1);
         const mid=document.createElement('div');mid.className='zone-center';const val=document.createElement('strong');val.textContent=fmt(a.price);mid.append(val);
-        const meta=document.createElement('div');meta.className='zone-meta';meta.textContent=chooseRankLabel(a,i,main)+(a.cg?((a.frozen?' · 20:00 凍結最大痛點':' · CoinGlass 24H 最大痛點') + ((a.price>state.price)===(dir==='upper')?'':' · 已跨越該價位')):a.manual?' · 手動輸入':' · Pionex K線代理候選帶');mid.append(meta);
-        if(!a.manual&&!a.cg){const strip=document.createElement('div');strip.className='score-strip';const fill=document.createElement('div');fill.className='score-fill';fill.style.width=Math.max(3,a.score)+'%';strip.append(fill);mid.append(strip);}
-        const side=document.createElement('div');side.className='zone-right';side.append(document.createTextNode(pct(a.price,state.price)));const tag=document.createElement('em');tag.textContent=a.cg?(a.amount?'名目 '+(a.amount/1000000).toFixed(2)+'M USD':'估計清算位置'):a.manual?'人工標記':`代理強度 ${a.score}/100`;side.append(tag);
+        const meta=document.createElement('div');meta.className='zone-meta';meta.textContent=chooseRankLabel(a,i,main)+(a.cg?(a.frozen?' · 20:00 凍結 CoinGlass':' · CoinGlass 24H'):a.binance?(a.frozen?' · 20:00 凍結 Binance L2':' · Binance L2 · 假設清算帶'):a.manual?' · 手動輸入':' · 代理候選帶');mid.append(meta);
+        if(!a.manual&&!a.cg&&!a.binance){const strip=document.createElement('div');strip.className='score-strip';const fill=document.createElement('div');fill.className='score-fill';fill.style.width=Math.max(3,a.score)+'%';strip.append(fill);mid.append(strip);}
+        const side=document.createElement('div');side.className='zone-right';side.append(document.createTextNode(pct(a.price,state.price)));const tag=document.createElement('em');tag.textContent=a.cg?(a.amount?'名目 '+(a.amount/1000000).toFixed(2)+'M USD':'預估清算位置'):a.binance?'Binance K 線估算 · 非真實清算明細':a.manual?'人工標記':`代理強度 ${a.score}/100`;side.append(tag);
         row.append(badge,mid,side);list.append(row);
       });
     }
@@ -147,48 +154,43 @@
     const up=primary(state.zones.upper||[]),down=primary(state.zones.lower||[]);
     $('boundUpper').textContent=up?fmt(up.price):'--';$('boundUpperDist').textContent=up?(up.live?'即時 · ':'')+pct(up.price,state.price):'尚無候選價位';
     $('boundLower').textContent=down?fmt(down.price):'--';$('boundLowerDist').textContent=down?(down.live?'即時 · ':'')+pct(down.price,state.price):'尚無候選價位';
-    const t=Date.now(),frozenLabel=state.mode==='cg'&&chartSession(t).frozenWindow;
-    const hasFrozenCG=frozenLabel&&(state.zones.upper.some(z=>z.frozen)||state.zones.lower.some(z=>z.frozen));
-    $('frozenUpperLabel').textContent=frozenLabel?(hasFrozenCG?'20:00 凍結上界':state.cgChartLevelMode==='live'?'即時上界（未凍結）':'20:00 上界未保存'):(state.mode==='cg'?'CoinGlass 上界':'上方目標');
-    $('frozenLowerLabel').textContent=frozenLabel?(hasFrozenCG?'20:00 凍結下界':state.cgChartLevelMode==='live'?'即時下界（未凍結）':'20:00 下界未保存'):(state.mode==='cg'?'CoinGlass 下界':'下方目標');
-    // The 24H CoinGlass live readout is ALWAYS independent of the frozen chart levels.
-    const cgAge=t-state.cgAt;
-    const hasValid=Boolean(state.cgPain&&state.cgAt&&state.cgPain.short>0&&state.cgPain.long>0&&!state.suppressLive);
-    const hasCurrent=hasValid&&cgAge<180000;
-    // Stored last-success prices remain visible only when explicitly marked stale.
-    const liveUp=hasValid?fmt(state.cgPain.short):'--';
-    const liveDown=hasValid?fmt(state.cgPain.long):'--';
-    const conciseError=()=>{
-      const e=String(state.cgError||'讀取失敗');
-      if(/data=null|無清算資料/.test(e))return '來源無資料';
-      if(/解碼|AES|GZIP|padding|加密版本|尚未支援|V0|V1|V2|V55|V66|V77/i.test(e))return '解碼失敗';
-      if(/缺少.*user|缺少.*v/.test(e))return '回應格式改變';
-      if(/AbortError|逾時|timeout/.test(e))return '讀取逾時';
-      if(/Failed to fetch|NetworkError|Load failed|網路|CORS/i.test(e))return '連線受限';
-      const status=e.match(/HTTP\s+(\d+)/);if(status)return '來源 HTTP '+status[1];
-      return '讀取失敗';
-    };
-    let liveStatus=state.cgBusy?'讀取中…':hasCurrent?'更新 '+tpeTime(state.cgAt,true):hasValid?'已過期 '+tpeTime(state.cgAt,true):conciseError();
-    if(!state.cgBusy&&state.cgError&&hasValid)liveStatus=(hasCurrent?'更新失敗 · ':'已過期 · ')+conciseError();
+    const t=Date.now(),frozenLabel=state.mode!=='manual'&&chartSession(t).frozenWindow;
+    const hasFrozen=Boolean(frozenLabel&&state.zones.upper.some(z=>z.frozen));
+    const effective=state.effectiveBoundarySource;
+    const origin=effective==='cg'?'CoinGlass':effective==='binance'?'Binance L2':'暫無';
+    const desc=hasFrozen?'20:00 凍結 '+origin:(effective==='none'?'尚未取得清算價':'即時 '+origin);
+    $('frozenUpperLabel').textContent=desc+' 上界';
+    $('frozenLowerLabel').textContent=desc+' 下界';
+    // Floating mini-panel always tracks CURRENT source, independent of chart freeze.
+    const live=boundaryData(t,state.mode==='manual'),liveSource=live.source==='cg'?'CoinGlass 24H':live.source==='binance'?'Binance L2':'清算目標';
+    const sourceAt=live.source==='cg'?state.cgAt:live.source==='binance'?state.binanceAt:0;
+    const liveUp=live.up>0?fmt(live.up):'--',liveDown=live.down>0?fmt(live.down):'--';
+    let liveStatus=live.source==='none'?(state.cgBusy||state.binanceBusy?'讀取中…':'兩個來源均無資料'):
+      '更新 '+tpeTime(sourceAt,true);
+    if(live.source==='binance'&&state.mode!=='binance')liveStatus='CoinGlass失效 · '+liveStatus;
+    $('liveSourceName').textContent=liveSource;
     $('liveCgUpper').textContent=liveUp;$('liveCgLower').textContent=liveDown;
     $('liveCgTime').textContent=liveStatus;
-    $('liveCgTime').title=state.cgError?('CoinGlass：'+state.cgError+'｜上次成功：'+(state.cgAt?tpeTime(state.cgAt):'無')):('CoinGlass 24H · '+(state.cgVersion?'加密 V'+state.cgVersion+' · ':'')+'每60秒嘗試更新；時間為最後成功取得數據');
-    $('liveTargetFloat').classList.toggle('stale',!hasCurrent||Boolean(state.cgError));
-    $('cgFloatRetry').disabled=state.cgBusy;
-    $('cgFloatRetry').title=state.cgBusy?'CoinGlass 讀取中':'重新取得 CoinGlass 24H 價格';
+    $('liveCgTime').title=(live.source==='binance'?`Binance ${state.binance?.feed||''}；第2近清算代理層 L2；`:
+      live.source==='cg'?`CoinGlass 24H · 解碼V${state.cgVersion||'?'}；`:'')+'每60秒嘗試更新；時間為最後成功讀取';
+    $('liveTargetFloat').classList.toggle('stale',live.source==='none');
+    $('cgFloatRetry').disabled=state.cgBusy||state.binanceBusy;
+    $('cgFloatRetry').title='重新讀取 CoinGlass 和 Binance L2';
+    $('drawerLiveSource').textContent=liveSource;
     $('drawerLiveUp').textContent=liveUp;$('drawerLiveDown').textContent=liveDown;
     $('drawerLiveTime').textContent=liveStatus;
     $('cgLiveDetailTime').textContent=liveStatus;
-    $('oiDisplay').textContent=state.cgPain&&state.mode==='cg'&&Number.isFinite(state.cgPain.referencePrice)?fmt(state.cgPain.referencePrice):'--';
-    $('cgDiag').textContent=state.cgPain&&Date.now()-state.cgAt<600000?'BTC 24H 上界 '+fmt(state.cgPain.short)+'／下界 '+fmt(state.cgPain.long)+' · '+tpeTime(state.cgAt)+(state.cgVersion?' · 解碼V'+state.cgVersion:''):('未取得：'+state.cgError);
+    $('oiDisplay').textContent=state.cgPain&&Number.isFinite(state.cgPain.referencePrice)?fmt(state.cgPain.referencePrice):'--';
+    $('cgDiag').textContent=isValidCoinGlass(t)?'CoinGlass 24H 已取得 · '+tpeTime(state.cgAt)+ ' · V'+(state.cgVersion||'?'):
+      'CoinGlass 不可用：'+(state.cgError||'資料已過期')+'；'+(isValidBinance(t)?'Binance L2 已就緒':'Binance L2：'+state.binanceError);
     $('marketPill').className='state-pill '+(state.source==='demo'||!state.liveAt||Date.now()-state.liveAt>120000?'demo':'');
     $('marketPill').innerHTML='<span class="led"></span>'+ (state.source==='demo'?'歷史資料預覽':!state.liveAt||Date.now()-state.liveAt>120000?'派網資料過期':'派網行情 · 已連線');
     $('lastUpdated').textContent=state.source==='demo'?`歷史示範 K 線截止 ${tpeTime(state.candles.at(-1)?.t)} · 非即時`:`最新行情 ${state.liveAt?tpeTime(state.liveAt):'--'} · 僅本機計算`;
     $('sourceDiag').textContent=state.sourceLabel;$('timeDiag').textContent=state.candles.length?tpeTime(state.candles.at(-1).t):'--';
-    $('volumeDiag').textContent=state.mode==='cg'?'CoinGlass 實際欄位（不使用代理成交量）':state.mode==='manual'?'手動標記':useVol?'代理分數使用成交量':'代理分數未使用成交量';
-    $('modelTag').textContent=state.mode==='manual'?'人工標記':state.mode==='cg'?(state.zones.upper.some(x=>x.frozen)||state.zones.lower.some(x=>x.frozen)?'20:00 凍結清算價':state.cgPain?'CoinGlass 已解析':'CoinGlass 待讀取'):'派網 K 線代理估算';
+    $('volumeDiag').textContent=effective==='cg'?'CoinGlass 預估金額（不使用代理成交量）':effective==='binance'?'Binance 15M K 線量價代理分數':state.mode==='manual'?'手動標記':'資料尚未取得';
+    $('modelTag').textContent=state.mode==='manual'?'手動標記':(hasFrozen?'20:00 凍結 · ':'即時 · ')+origin;
     $('chartMeta').textContent=state.source==='demo'?'歷史 15M OHLC：未含成交量':`PIONEX PERP · ${state.sourceLabel}`;
-    $('errorDiag').textContent=(state.refreshIssue|| (state.source==='demo'?'示範價格；非即時':'派網行情已連線'))+' ｜ CoinGlass：'+(state.cgPain&&Date.now()-state.cgAt<600000?'已取得':state.cgError);
+    $('errorDiag').textContent=(state.refreshIssue|| (state.source==='demo'?'示範價格；非即時':'派網行情已連線'))+' ｜ CoinGlass：'+(isValidCoinGlass(t)?'已取得':state.cgError)+' ｜ Binance L2：'+(isValidBinance(t)?'已取得 '+state.binance.feed:state.binanceError);
   }
   function modelDemoAsOf(){return Date.parse('2026-10-05T12:00:00.000Z');}
   function observedTPE(now=Date.now()){
@@ -470,19 +472,30 @@
     const computed=isAt20?buildZones(rows,atPrice):null;
     // CoinGlass is snapshot-only: cannot reconstruct the 20:00 quote after the fact.
     // Never transplant a later live CoinGlass value into a historical freeze.
-    const cgFreezeOK=isAt20&&state.mode==='cg'&&state.cgPain&&state.cgAt<=t20+90000&&state.cgAt>=t20-300000;
+    const recentFreeze=isAt20&&Number.isFinite(t20)&&Date.now()>=t20-300000&&Date.now()<=t20+90000;
+    // Snapshot the source that was actually valid at the freeze, not reconstructed later.
+    const cgFreezeOK=recentFreeze&&state.mode==='cg'&&isValidCoinGlass()&&state.cgAt>=t20-300000&&state.cgAt<=t20+90000;
+    const binanceFreezeOK=recentFreeze&&(state.mode==='binance'||(state.mode==='cg'&&!cgFreezeOK))&&
+      isValidBinance()&&state.binanceAt>=t20-300000&&state.binanceAt<=t20+90000;
+    const frozenMode=cgFreezeOK?'cg':binanceFreezeOK?'binance':state.mode;
     const cgFrozen=cgFreezeOK?state.cgPain:null;
-        const cgZones=cgFrozen?{upper:cgFrozen.short>0?[{price:cgFrozen.short,amount:cgFrozen.shortAmount}]:[],lower:cgFrozen.long>0?[{price:cgFrozen.long,amount:cgFrozen.longAmount}]:[]}: {upper:[],lower:[]};
-    const zo=isAt20?(state.mode==='cg'?cgZones:computed):state.zones;
+    const freezeZones=cgFreezeOK?{
+      upper:[{price:cgFrozen.short,amount:cgFrozen.shortAmount}],
+      lower:[{price:cgFrozen.long,amount:cgFrozen.longAmount}]
+    }:binanceFreezeOK?{
+      upper:[{price:state.binance.upper.price,score:state.binance.upper.score}],
+      lower:[{price:state.binance.lower.price,score:state.binance.lower.score}]
+    }:isAt20&&state.mode==='manual'?state.zones:{upper:[],lower:[]};
+    const zo=isAt20?freezeZones:state.zones;
     const up=primary(zo.upper||[]),down=primary(zo.lower||[]);
-    const row={id,day,created:t.text,kind,source:state.sourceLabel,mode:state.mode,price:+atPrice.toFixed(2),
+    const row={id,day,created:t.text,kind,source:state.sourceLabel,mode:isAt20?frozenMode:state.mode,liquidationSource:isAt20?(cgFreezeOK?'CoinGlass 24H':binanceFreezeOK?'Binance L2 '+state.binance.feed:'未保存'):(state.effectiveBoundarySource||'unknown'),price:+atPrice.toFixed(2),
       upper:up?.price??'',lower:down?.price??'',upperAll:zo.upper.map(z=>z.price).join('|'),lowerAll:zo.lower.map(z=>z.price).join('|'),coinGlassAt:cgFreezeOK?tpeTime(state.cgAt):'',coinGlassLevelUpper:cgFreezeOK?cgFrozen.shortAmount:'',coinGlassLevelLower:cgFreezeOK?cgFrozen.longAmount:'',
       upProb:pr?.ready?+(pr.up*100).toFixed(2):'',downProb:pr?.ready?+((1-pr.up)*100).toFixed(2):'',
       rawUpProb:pr?.ready?+(pr.modelUp*100).toFixed(2):'',baseUpProb:pr?.ready&&Number.isFinite(pr.baseUp)?+(pr.baseUp*100).toFixed(2):'',
       ha:pr?.ready?pr.haColor:'',haDelta:pr?.ready?pr.haDelta*100:'',
       trainedUpper:pr?.ready?pr.modelTargets.upper:'',trainedLower:pr?.ready?pr.modelTargets.lower:'',
       freezeMethod:isAt20?(Date.now()-t20<90000?'20:00附近直接記錄':'歷史K線回補20:00（CoinGlass不回填）'):'手動',
-      confidence:'方向模型仍是舊價格代理；CoinGlass 最大痛點僅作顯示和快照目標，尚未在真實清算帶上驗證'};
+      confidence:'方向模型沿用舊價格代理訓練。CoinGlass 為預估痛點；Binance L2 為K線量價代理，不是官方持倉清算價。'};
     state.snapshots.push(row);persistSnapshots();renderSnapshot();if(isAt20)redraw();
   }
   function renderSnapshot(){
@@ -491,7 +504,7 @@
     const d=$('snapshotContent');
     if(!latest){d.textContent='目前沒有快照。按下「儲存目前畫面」可以測試保存。';$('snapshotHistory').replaceChildren();return;}
     const title=latest.kind==='auto'?'20:00 凍結快照':'手動測試快照';
-    d.innerHTML=`<b>${title} · ${latest.created}</b><div>當時價格 ${fmt(latest.price)}　│　上界 <span style="color:#35e1bb">${latest.upper?fmt(Number(latest.upper)):'--'}</span>　│　下界 <span style="color:#ff8187">${latest.lower?fmt(Number(latest.lower)):'--'}</span></div><div><b>上掃 ${latest.upProb!==''?latest.upProb+'%':'--'} ｜ 下掃 ${latest.downProb!==''?latest.downProb+'%':'--'}</b> · HA ${latest.ha||'--'} · 模型代理目標 ${latest.trainedUpper?fmt(Number(latest.trainedUpper)):'--'} / ${latest.trainedLower?fmt(Number(latest.trainedLower)):'--'}</div><div>保存方式：${latest.freezeMethod||'舊版紀錄'} · 來源：${String(latest.source).replace(/[<>&]/g,'')} · 本機儲存</div>`;
+    d.innerHTML=`<b>${title} · ${latest.created}</b><div>當時價格 ${fmt(latest.price)}　│　上界 <span style="color:#35e1bb">${latest.upper?fmt(Number(latest.upper)):'--'}</span>　│　下界 <span style="color:#ff8187">${latest.lower?fmt(Number(latest.lower)):'--'}</span></div><div><b>上掃 ${latest.upProb!==''?latest.upProb+'%':'--'} ｜ 下掃 ${latest.downProb!==''?latest.downProb+'%':'--'}</b> · HA ${latest.ha||'--'} · 模型代理目標 ${latest.trainedUpper?fmt(Number(latest.trainedUpper)):'--'} / ${latest.trainedLower?fmt(Number(latest.trainedLower)):'--'}</div><div>保存方式：${latest.freezeMethod||'舊版紀錄'} · 清算來源：${String(latest.liquidationSource||latest.mode).replace(/[<>&]/g,'')} · 本機儲存</div>`;
     renderSnapshotHistory();
   }
   function renderSnapshotHistory(){
@@ -518,7 +531,8 @@
       if(Date.now()<end)continue;
       const bars=state.candles.filter(c=>c.t>=start&&c.t<end).sort((a,b)=>a.t-b.t);
       if(bars.length!==48||bars.some((c,i)=>c.t!==start+i*900000))continue;
-      const testUpper=record.mode==='cg'?Number(record.upper):Number(record.trainedUpper),testLower=record.mode==='cg'?Number(record.lower):Number(record.trainedLower);
+      const hasFrozenTargets=['cg','binance','proxy','manual'].includes(record.mode)&&Number(record.upper)>0&&Number(record.lower)>0;
+      const testUpper=hasFrozenTargets?Number(record.upper):Number(record.trainedUpper),testLower=hasFrozenTargets?Number(record.lower):Number(record.trainedLower);
       if(!(testUpper>0&&testLower>0))continue; // no unverifiable retroactive CoinGlass prices
       let hi=-1,lo=-1;
       for(let i=0;i<bars.length;i++){
@@ -540,7 +554,7 @@
   }
   function exportCSV(){
     if(!state.snapshots.length){window.alert('目前還沒有保存的快照。');return;}
-    const keys=['day','created','kind','source','mode','price','upper','lower','upperAll','lowerAll','upProb','downProb','rawUpProb','baseUpProb','ha','haDelta','trainedUpper','trainedLower','freezeMethod','result','firstHitTpe','correct','confidence','coinGlassAt','coinGlassLevelUpper','coinGlassLevelLower'];
+    const keys=['day','created','kind','source','mode','liquidationSource','price','upper','lower','upperAll','lowerAll','upProb','downProb','rawUpProb','baseUpProb','ha','haDelta','trainedUpper','trainedLower','freezeMethod','result','firstHitTpe','correct','confidence','coinGlassAt','coinGlassLevelUpper','coinGlassLevelLower'];
     const csv='\uFEFF'+[keys.join(','),...state.snapshots.map(r=>keys.map(k=>'"'+String(r[k]??'').replaceAll('"','""')+'"').join(','))].join('\r\n');
     const u=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=u;a.download='BTC_20點機率與清算價快照_'+tpeParts().date+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(u),2000);
   }
@@ -602,6 +616,15 @@
       if(raw.warning)state.refreshIssue=raw.warning;
     }catch(e){state.modelError='派網日K無法更新 '+String(e.message||e);/* Keep any previously validated Pionex day history on transient failure. */}
   }
+  async function loadBinance(){
+    if(state.binanceBusy||state.suppressLive||!window.BinanceL2)return;
+    state.binanceBusy=true;state.refreshBinanceAt=Date.now();
+    try{
+      const data=await window.BinanceL2.fetchLayers({maxDistance:state.maxDistance,binRatio:state.binRatio});
+      state.binance=data;state.binanceAt=data.at;state.binanceError='';
+    }catch(e){state.binanceError=String(e?.message||e);}
+    finally{state.binanceBusy=false;redraw();maybeAutoFreeze();}
+  }
   const CG_CACHE_KEY='btc-cg24h-last-success-v083';
   function restoreCoinGlassCache(){
     try{
@@ -625,6 +648,7 @@
       try{localStorage.setItem(CG_CACHE_KEY,JSON.stringify({at:state.cgAt,data:result,version:state.cgVersion}));}catch(_){}
     }catch(e){
       state.cgFailures++;
+      if(!state.suppressLive&&Date.now()-state.refreshBinanceAt>=15000)loadBinance();
       const msg=e?.name==='AbortError'?'讀取逾時（14 秒）':String(e?.message||e);
       state.cgError=msg;
       // Preserve last valid values with clearly marked stale state, never invent live data.
@@ -632,19 +656,19 @@
     }finally{state.cgBusy=false;redraw();maybeAutoFreeze();}
   }
   function setMode(mode){
-    state.mode=mode;const manual=mode==='manual',proxy=mode==='proxy';
+    state.mode=mode;const manual=mode==='manual',proxy=mode==='binance';
     $('manualConfig').hidden=!manual;$('autoConfig').hidden=!proxy;$('cgConfig').hidden=mode!=='cg';
-    [['cgMode','cg'],['autoMode','proxy'],['manualMode','manual']].forEach(([id,value])=>{const active=mode===value;$(id).classList.toggle('switch-active',active);$(id).setAttribute('aria-pressed',String(active));});redraw();
+    [['cgMode','cg'],['autoMode','binance'],['manualMode','manual']].forEach(([id,value])=>{const active=mode===value;$(id).classList.toggle('switch-active',active);$(id).setAttribute('aria-pressed',String(active));});redraw();
   }
-  $('cgMode').onclick=()=>setMode('cg');$('autoMode').onclick=()=>setMode('proxy');$('manualMode').onclick=()=>setMode('manual');
-  $('cgRetry').onclick=()=>{state.cgError='重新嘗試中';loadCoinGlass();};
-  $('cgFloatRetry').onclick=(event)=>{event.stopPropagation();state.cgError='重新嘗試中';loadCoinGlass();};
+  $('cgMode').onclick=()=>setMode('cg');$('autoMode').onclick=()=>{setMode('binance');loadBinance();};$('manualMode').onclick=()=>setMode('manual');
+  $('cgRetry').onclick=()=>{state.cgError='重新嘗試中';loadCoinGlass();loadBinance();};
+  $('cgFloatRetry').onclick=(event)=>{event.stopPropagation();state.cgError='重新嘗試中';loadCoinGlass();loadBinance();};
   $('applyManual').onclick=()=>{const upper=parseLevels($('manualUpper').value,'upper',state.price),lower=parseLevels($('manualLower').value,'lower',state.price);if(!upper.length&&!lower.length){window.alert('請輸入高於現價的上方價格或低於現價的下方價格');return;}state.manual={upper:upper.map(x=>x.price),lower:lower.map(x=>x.price)};redraw();};
-  $('maxDistance').onchange=e=>{state.maxDistance=Number(e.target.value)/100;redraw();};
-  $('zoneWidth').onchange=e=>{state.binRatio=Number(e.target.value)/100;redraw();};
+  $('maxDistance').onchange=e=>{state.maxDistance=Number(e.target.value)/100;loadBinance();redraw();};
+  $('zoneWidth').onchange=e=>{state.binRatio=Number(e.target.value)/100;loadBinance();redraw();};
   $('saveSnapshot').onclick=()=>captureSnapshot('manual');$('exportSnapshots').onclick=exportCSV;
   $('clearSnapshots').onclick=()=>{if(window.confirm('確定清除這台裝置保存的歷史快照？')){state.snapshots=[];persistSnapshots();renderSnapshot();}};
-  $('refreshButton').onclick=()=>{state.suppressLive=false;loadRealtime();loadCoinGlass();};
+  $('refreshButton').onclick=()=>{state.suppressLive=false;loadRealtime();loadCoinGlass();loadBinance();};
   $('demoButton').onclick=()=>{state.suppressLive=true;state.source='demo';state.sourceLabel='歷史離線示範；非派網即時行情';state.candles=readDemo();state.daily=readDemoDays();state.fourHCandles=[];state.price=state.candles.at(-1).c;state.cgPain=null;state.refreshIssue='已切換歷史示範模式';redraw();};
   function clockTick(){
     const now=tpeParts();$('twClock').textContent='台灣時間 '+now.text;
@@ -653,6 +677,7 @@
       else if(state.source!=='demo'&&t-state.refreshPAt>=PRICE_INTERVAL){state.refreshPAt=t;refreshTick();}
       if(t-state.refreshHAAt>HA_INTERVAL&&state.source!=='demo'){state.refreshHAAt=t;refreshDaily().then(redraw);}
       if(t-state.refreshCGAt>COINGLASS_INTERVAL){state.refreshCGAt=t;loadCoinGlass();}
+      if(t-state.refreshBinanceAt>BINANCE_INTERVAL){state.refreshBinanceAt=t;loadBinance();}
     }
     // Re-evaluate the chart ON THE EXACT 08:00/20:00 phase change,
     // even if quote/API requests fail and there is no price-update redraw.
@@ -661,6 +686,6 @@
     maybeAutoFreeze();
   }
   restoreCoinGlassCache();state.snapshots=loadLocalSnapshots();state.candles=readDemo();state.daily=readDemoDays();state.price=state.candles.at(-1).c;redraw();clockTick();setInterval(clockTick,1000);
-  setTimeout(loadRealtime,400);setTimeout(loadCoinGlass,700);
-  window.BTC_RADAR_TEST={buildZones,parseLevels,tpeParts,scoreSettlements,loadCoinGlass,refreshTick,loadRealtime,chartSession,forceRedraw:redraw,clockTick,getState:()=>({liveCGUpper:state.cgPain?.short??null,liveCGLower:state.cgPain?.long??null,liveCGAt:state.cgAt,chartTf:state.chartTf,chart4HCount:state.fourHCandles.length,price:state.price,source:state.source,sourceLabel:state.sourceLabel,mode:state.mode,zones:state.zones,cgPain:state.cgPain,cgAt:state.cgAt,cgVersion:state.cgVersion,cgError:state.cgError,snapshots:state.snapshots,cgChartLevelMode:state.cgChartLevelMode,probability:state.probability,refreshIssue:state.refreshIssue})};
+  setTimeout(loadRealtime,400);setTimeout(loadCoinGlass,700);setTimeout(loadBinance,1200);
+  window.BTC_RADAR_TEST={buildZones,parseLevels,tpeParts,scoreSettlements,loadCoinGlass,refreshTick,loadRealtime,chartSession,forceRedraw:redraw,clockTick,getState:()=>({liveCGUpper:state.cgPain?.short??null,liveCGLower:state.cgPain?.long??null,liveCGAt:state.cgAt,chartTf:state.chartTf,chart4HCount:state.fourHCandles.length,price:state.price,source:state.source,sourceLabel:state.sourceLabel,mode:state.mode,zones:state.zones,cgPain:state.cgPain,cgAt:state.cgAt,cgVersion:state.cgVersion,cgError:state.cgError,binance:state.binance,binanceAt:state.binanceAt,binanceError:state.binanceError,effectiveBoundarySource:state.effectiveBoundarySource,snapshots:state.snapshots,cgChartLevelMode:state.cgChartLevelMode,probability:state.probability,refreshIssue:state.refreshIssue})};
 })();

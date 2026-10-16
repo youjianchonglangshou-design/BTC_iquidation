@@ -1,23 +1,12 @@
 {
   "name": "BTC CoinGlass × Pionex Liquidity Radar",
-  "version": "0.8.8",
+  "version": "0.8.9",
   "date": "2026-10-16",
-  "base": "0.8.7",
-  "scope": "Fix HA capsule mistakenly hidden whenever probability is gated before 16:00. Standalone observable HA computed throughout session from Pionex daily history + current Pionex candle.",
-  "coinglass_protocol": {
-    "v0": "request Cache-Ts-V2",
-    "v1": "API path",
-    "v2": "response Time",
-    "v55": "legacy seed 170b070da9654622",
-    "v66": "legacy seed d6537d845a964081",
-    "v77": "legacy seed 863f08689c97435b"
-  },
-  "price_feed": "Pionex PERP current quote, 15M and 4H candles unchanged",
-  "probability_model": "unchanged 39-feature logistic model + HA +/-4.5 percentage points",
-  "freeze": "20:00 Asia/Taipei through next 07:59:59 freeze snapshot; 08:00 chart resumes live CoinGlass; floating quote remains live 24h",
-  "file_changes": [
-    "app.js",
-    "index.html",
-    "VERSION.json"
-  ]
+  "base": "0.8.8",
+  "scope": "CoinGlass first; when its decryption or data fetch fails, automatically use Binance v0.1.0 15M liquidation proxy L2 (second-nearest layer) for upper and lower bounds. Manual Binance L2 selector.",
+  "boundaries": "CoinGlass 24h Max Pain or Binance BTCUSDT 15m proxy L2; Binance futures preferred, second futures endpoint then marked spot fallback; historical 20:00 freeze source preserved",
+  "market": "PIONEX BTC_USDT_PERP quote and PIONEX:BTCUSDT.P 4H/15M/day candles unchanged",
+  "probability": "Unchanged 39-feature historical proxy direction model with 4.5 percentage point HA adjustment",
+  "freeze": "20:00 Asia/Taipei snapshot until next 07:59; 08:00 resumes live source; no retroactive Coinglass/Binance level reconstruction",
+  "files": ["app.js", "index.html", "VERSION.json", "binance-l2.js"]
 }
