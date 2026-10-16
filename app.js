@@ -1,4 +1,4 @@
-/* BTC LIQUIDITY RADAR v0.9.2 - CoinGlass preferred, Binance original v0.1 L2 fallback. */
+/* BTC LIQUIDITY RADAR v0.9.9 - local 20:00 freeze independent of R2, Cloudflare remote optional. */
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
@@ -110,15 +110,38 @@
     if(binance)return {source:'binance',up:state.binance.upper.price,down:state.binance.lower.price};
     return {source:'none',up:null,down:null};
   }
-  // Official 20:00 R2 record only: the latest 24H quote must NEVER masquerade
-  // as a frozen price when today's cloud freeze is missing / still loading.
+  // Local freeze is INDEPENDENT of R2. Cloud records take precedence when available;
+  // a valid local 20:00 snapshot is still displayed if the network/R2 is unavailable.
+  const FREEZE_CANDIDATE_KEY='btc-liq-local-pre20-v099';
+  const FREEZE_WINDOW_MS=10*60000;
+  function validFreezeRow(row,session){
+    return Boolean(row&&row.id===session.day+'-20:00'&&row.day===session.day&&row.kind==='auto'&&
+      ['cg','binance','proxy'].includes(row.mode)&&Number(row.upper)>0&&Number(row.lower)>0&&
+      Number(row.upper)>Number(row.lower)&&Number(row.price)>0);
+  }
   function frozenPriceRecord(session=chartSession()){
     if(!session.frozenWindow)return null;
-    const row=state.snapshots.find(x=>x.id===session.day+'-20:00'&&x.kind==='auto'&&
-      x.day===session.day&&['cg','binance','proxy'].includes(x.mode)&&
-      Number(x.upper)>0&&Number(x.lower)>0&&Number(x.upper)>Number(x.lower)&&
-      Number(x.price)>0&&typeof x.r2FirstSavedAt==='string'&&x.r2FirstSavedAt.length>0);
-    return row||null;
+    return state.snapshots.find(x=>validFreezeRow(x,session))||null;
+  }
+  function readPre20Candidate(day){
+    try{
+      const x=JSON.parse(localStorage.getItem(FREEZE_CANDIDATE_KEY)||'null');
+      const t20=Date.parse(day+'T12:00:00.000Z');
+      return x&&x.day===day&&Number(x.upper)>Number(x.lower)&&Number(x.price)>0&&
+        Number(x.observedAt)<=t20&&Number(x.observedAt)>=t20-FREEZE_WINDOW_MS&&
+        Number(x.sourceAt)<=t20&&Number(x.sourceAt)>=t20-FREEZE_WINDOW_MS?x:null;
+    }catch{return null;}
+  }
+  function rememberPre20Candidate(t,picked){
+    const session=chartSession(t),t20=session.start+12*3600000;
+    if(session.frozenWindow||t<t20-FREEZE_WINDOW_MS||t>=t20||state.source==='demo'||
+       !(state.price>0)||!picked||!(picked.up>picked.down)||picked.source==='none'||picked.source==='manual')return;
+    const sourceAt=picked.source==='cg'?state.cgAt:state.binanceAt;
+    if(!(sourceAt<=t20&&sourceAt>=t20-FREEZE_WINDOW_MS))return;
+    const row={day:session.day,observedAt:t,sourceAt,mode:picked.source,
+      upper:Number(picked.up),lower:Number(picked.down),price:Number(state.price),
+      upperAmount:Number(picked.upAmount)||0,lowerAmount:Number(picked.downAmount)||0};
+    try{localStorage.setItem(FREEZE_CANDIDATE_KEY,JSON.stringify(row));}catch(_){}
   }
   function calculateCurrentZones(){
     const t=Date.now(),session=chartSession(t);
@@ -130,19 +153,20 @@
     }
     const frozen=frozenPriceRecord(session);
     if(session.frozenWindow&&!frozen){
-      // Cloud snapshot is authoritative. While pending, intentionally show no
-      // chart/forecast boundary lines instead of leaking today's LIVE price.
+      // No historical CoinGlass quote can be reconstructed from the current price.
+      // Local reconstruction is attempted by maybeAutoFreeze() after live bars load.
       state.cgChartLevelMode='awaiting-freeze';state.effectiveBoundarySource='none';
       state.zones={upper:[],lower:[]};return false;
     }
     const picked=session.frozenWindow?null:boundaryData(t);
+    if(!session.frozenWindow)rememberPre20Candidate(t,picked);
     const hasFrozen=Boolean(frozen);
     const source=hasFrozen?(frozen.mode==='cg'?'cg':frozen.mode==='binance'?'binance':'proxy'):picked.source;
     const up=hasFrozen?Number(frozen.upper):picked.up,down=hasFrozen?Number(frozen.lower):picked.down;
     const basis=hasFrozen?Number(frozen.price):state.price;
     state.cgChartLevelMode=hasFrozen?'frozen':source!=='none'?'live':'none';
     state.effectiveBoundarySource=source;
-    const make=(price,dir)=>({price,distance:Math.abs(price/basis-1),score:null,
+    const make=(price,dir)=>({price,distance:Math.abs(price/basis-1),score:null,estimated:!!frozen?.reconstructed,
       width:Math.max(40,basis*.00085),cg:source==='cg',binance:source==='binance',proxy:source==='proxy',
       amount:hasFrozen?(dir==='upper'?Number(frozen.coinGlassLevelUpper):Number(frozen.coinGlassLevelLower)):(dir==='upper'?picked.upAmount:picked.downAmount),
       basisPrice:basis,frozen:hasFrozen,live:!hasFrozen,main:true,layer:source==='binance'?'L2':null});
@@ -155,12 +179,12 @@
     for(const dir of ['upper','lower']){
       const list=$(dir==='upper'?'upperList':'lowerList');list.replaceChildren();
       const z=state.zones[dir]||[];const main=primary(z);
-      if(!z.length){const el=document.createElement('div');el.className='empty-state';el.textContent=state.cgChartLevelMode==='awaiting-freeze'?'等待雲端20:00凍結快照（即時24H仍在圖內浮卡更新）':state.mode==='manual'?'請在右側輸入清算價位。':'CoinGlass 尚未成功或 Binance L2 尚未取得；請查看資料狀態。';list.append(el);continue;}
+      if(!z.length){const el=document.createElement('div');el.className='empty-state';el.textContent=state.cgChartLevelMode==='awaiting-freeze'?'等待20:00本機凍結資料（即時24H浮卡仍更新）':state.mode==='manual'?'請在右側輸入清算價位。':'CoinGlass 尚未成功或 Binance L2 尚未取得；請查看資料狀態。';list.append(el);continue;}
       z.forEach((a,i)=>{
         const row=document.createElement('div');row.className='zone-row';
         const badge=document.createElement('div');badge.className='index-chip';badge.textContent='L'+(i+1);
         const mid=document.createElement('div');mid.className='zone-center';const val=document.createElement('strong');val.textContent=fmt(a.price);mid.append(val);
-        const meta=document.createElement('div');meta.className='zone-meta';meta.textContent=chooseRankLabel(a,i,main)+(a.cg?(a.frozen?' · 20:00 凍結 CoinGlass':' · CoinGlass 24H'):a.binance?(a.frozen?' · 20:00 凍結 Binance L2':' · Binance L2 · 假設清算帶'):a.proxy?' · 20:00 凍結模型代理目標':a.manual?' · 手動輸入':' · 代理候選帶');mid.append(meta);
+        const meta=document.createElement('div');meta.className='zone-meta';meta.textContent=chooseRankLabel(a,i,main)+(a.cg?(a.frozen?' · 20:00 凍結 CoinGlass':' · CoinGlass 24H'):a.binance?(a.frozen?' · 20:00 凍結 Binance L2':' · Binance L2 · 假設清算帶'):a.proxy?' · 20:00 本機凍結代理估算':a.manual?' · 手動輸入':' · 代理候選帶');mid.append(meta);
         if(!a.manual&&!a.cg&&!a.binance){const strip=document.createElement('div');strip.className='score-strip';const fill=document.createElement('div');fill.className='score-fill';fill.style.width=Math.max(3,a.score)+'%';strip.append(fill);mid.append(strip);}
         const side=document.createElement('div');side.className='zone-right';side.append(document.createTextNode(pct(a.price,a.frozen?a.basisPrice:state.price)));const tag=document.createElement('em');tag.textContent=a.cg?(a.amount?'名目 '+(a.amount/1000000).toFixed(2)+'M USD':'預估清算位置'):a.binance?'Binance K 線估算 · 非真實清算明細':a.manual?'人工標記':`代理強度 ${a.score}/100`;side.append(tag);
         row.append(badge,mid,side);list.append(row);
@@ -171,13 +195,13 @@
     $('priceNow').textContent=fmt(state.price);$('priceSource').textContent=state.source==='demo'?state.sourceLabel:(state.priceSource||state.sourceLabel);
     const up=primary(state.zones.upper||[]),down=primary(state.zones.lower||[]);
     const freezeWaiting=state.cgChartLevelMode==='awaiting-freeze';
-    $('boundUpper').textContent=up?fmt(up.price):'--';$('boundUpperDist').textContent=up?(up.frozen?'凍結 · ':up.live?'即時 · ':'')+pct(up.price,up.frozen?up.basisPrice:state.price):freezeWaiting?'等待20:00快照':'尚無候選價位';
-    $('boundLower').textContent=down?fmt(down.price):'--';$('boundLowerDist').textContent=down?(down.frozen?'凍結 · ':down.live?'即時 · ':'')+pct(down.price,down.frozen?down.basisPrice:state.price):freezeWaiting?'等待20:00快照':'尚無候選價位';
+    $('boundUpper').textContent=up?fmt(up.price):'--';$('boundUpperDist').textContent=up?(up.frozen?(up.estimated?'凍結估算 · ':'凍結 · '):up.live?'即時 · ':'')+pct(up.price,up.frozen?up.basisPrice:state.price):freezeWaiting?'等待20:00快照':'尚無候選價位';
+    $('boundLower').textContent=down?fmt(down.price):'--';$('boundLowerDist').textContent=down?(down.frozen?(down.estimated?'凍結估算 · ':'凍結 · '):down.live?'即時 · ':'')+pct(down.price,down.frozen?down.basisPrice:state.price):freezeWaiting?'等待20:00快照':'尚無候選價位';
     const t=Date.now(),frozenLabel=state.mode!=='manual'&&chartSession(t).frozenWindow;
     const hasFrozen=Boolean(frozenLabel&&state.zones.upper.some(z=>z.frozen));
     const effective=state.effectiveBoundarySource;
     const origin=effective==='cg'?'CoinGlass':effective==='binance'?'Binance L2':effective==='proxy'?'模型代理目標':'暫無';
-    const desc=hasFrozen?'20:00 凍結 '+origin:freezeWaiting?'等待20:00雲端凍結快照':effective==='none'?'尚未取得清算價':'即時 '+origin;
+    const desc=hasFrozen?(frozenPriceRecord()?.reconstructed?'20:00 代理估算 ': '20:00 凍結 ')+origin:freezeWaiting?'等待20:00凍結資料':effective==='none'?'尚未取得清算價':'即時 '+origin;
     $('frozenUpperLabel').textContent=desc+' 上界';
     $('frozenLowerLabel').textContent=desc+' 下界';
     // Floating mini-panel always tracks CURRENT source, independent of chart freeze.
@@ -392,7 +416,7 @@
       for(const z of arr){
         const yy=y(z.price),w=Math.max(3,Math.abs(y(z.price+(z.width||35)/2)-y(z.price-(z.width||35)/2)));
         ctx.fillStyle=up?'rgba(43,215,184,.075)':'rgba(241,116,137,.075)';ctx.fillRect(L,yy-w/2,pw,w);
-        levels.push({price:z.price,yy,dir,main:z===main,live:!!z.live,color:up?'#35dcb8':'#f47c8a'});
+        levels.push({price:z.price,yy,dir,main:z===main,live:!!z.live,estimated:!!z.estimated,color:up?'#35dcb8':'#f47c8a'});
       }
     }
     const bodyW=clamp(step*.63,2.6,21);
@@ -447,7 +471,7 @@
       const bg=lev.dir==='upper'?'#115849':'#6d3640';
       roundRect(ctx,g.axisX,place-11,g.axisWidth,22,4,bg,lev.color);
       ctx.fillStyle=lev.dir==='upper'?'#e1fff3':'#fff0f3';ctx.textBaseline='middle';ctx.textAlign='center';ctx.font='bold 11px Arial';
-      ctx.fillText((lev.live?'即時 ':'凍結 ')+priceText(lev.price),g.axisX+g.axisWidth/2,place,g.axisWidth-6);
+      ctx.fillText((lev.live?'即時 ':lev.estimated?'估算凍結 ':'凍結 ')+priceText(lev.price),g.axisX+g.axisWidth/2,place,g.axisWidth-6);
     }
     if(hover){
       // Date/time badge (reference screenshot lower red rectangle).
@@ -486,9 +510,9 @@
     if(label&&data){label.textContent=data.message;label.dataset.phase=data.phase;}
   };
   function applyCloudRecords(rows){
-    // R2 is the canonical source. In particular, a local tentative settlement
-    // must not override a server's still-pending or confirmed outcome.
-    const byId=new Map(state.snapshots.filter(r=>r.kind!=='auto').map(r=>[r.id,r]));
+    // R2 is the canonical source for a record WHEN IT EXISTS. A failed or empty
+    // R2 response must never delete this device's genuine local 20:00 freeze.
+    const byId=new Map(state.snapshots.map(r=>[r.id,r]));
     for(const r of rows)byId.set(r.id,r);
     state.snapshots=[...byId.values()].sort((a,b)=>String(a.day).localeCompare(String(b.day))||String(a.created).localeCompare(String(b.created))).slice(-120);
     persistSnapshots();renderSnapshot();redraw();
@@ -523,52 +547,61 @@
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)pullCloud();});
   }
   function captureSnapshot(kind){
-    const pr=state.probability;if(!pr?.ready&&kind==='auto')return;
-    if(!(state.price>0))return;
+    const pr=state.probability;
     if(kind==='auto'&&state.source==='demo')return;
-    const t=tpeParts();const day=pr?.day!=null?new Date(pr.day).toISOString().slice(0,10):t.date;
-    const id=kind==='auto'?day+'-20:00':day+'-'+Date.now();
+    if(!(state.price>0))return;
+    const now=Date.now(),session=chartSession(now),isAt20=kind==='auto';
+    if(isAt20&&!session.frozenWindow)return;
+    const day=isAt20?session.day:tpeParts().date;
+    const id=isAt20?day+'-20:00':day+'-'+now;
     if(state.snapshots.some(x=>x.id===id))return;
-    const isAt20=kind==='auto';const t20=pr?.day+12*3600000;
+    const t20=session.start+12*3600000;
     const rows=isAt20?state.candles.filter(x=>x.t+900000<=t20):state.candles;
-    const atPrice=isAt20?rows.at(-1)?.c:state.price;
-    const computed=isAt20?buildZones(rows,atPrice):null;
-    // CoinGlass is snapshot-only: cannot reconstruct the 20:00 quote after the fact.
-    // Never transplant a later live CoinGlass value into a historical freeze.
-    const recentFreeze=isAt20&&Number.isFinite(t20)&&Date.now()>=t20-300000&&Date.now()<=t20+90000;
-    // Snapshot the source that was actually valid at the freeze, not reconstructed later.
-    const cgFreezeOK=recentFreeze&&state.mode==='cg'&&isValidCoinGlass()&&state.cgAt>=t20-300000&&state.cgAt<=t20+90000;
-    const binanceFreezeOK=recentFreeze&&(state.mode==='binance'||(state.mode==='cg'&&!cgFreezeOK))&&
-      isValidBinance()&&state.binanceAt>=t20-300000&&state.binanceAt<=t20+90000;
-    const frozenMode=cgFreezeOK?'cg':binanceFreezeOK?'binance':state.mode;
-    const cgFrozen=cgFreezeOK?state.cgPain:null;
-    const freezeZones=cgFreezeOK?{
-      upper:[{price:cgFrozen.short,amount:cgFrozen.shortAmount}],
-      lower:[{price:cgFrozen.long,amount:cgFrozen.longAmount}]
-    }:binanceFreezeOK?{
-      upper:[{price:state.binance.upper.price,score:state.binance.upper.score}],
-      lower:[{price:state.binance.lower.price,score:state.binance.lower.score}]
-    }:isAt20&&state.mode==='manual'?state.zones:{upper:[],lower:[]};
-    const zo=isAt20?freezeZones:state.zones;
-    const up=primary(zo.upper||[]),down=primary(zo.lower||[]);
-    const row={id,day,created:t.text,kind,source:state.sourceLabel,mode:isAt20?frozenMode:state.mode,liquidationSource:isAt20?(cgFreezeOK?'CoinGlass 24H':binanceFreezeOK?'Binance L2 '+state.binance.feed:'未保存'):(state.effectiveBoundarySource||'unknown'),price:+atPrice.toFixed(2),
-      upper:up?.price??'',lower:down?.price??'',upperAll:zo.upper.map(z=>z.price).join('|'),lowerAll:zo.lower.map(z=>z.price).join('|'),coinGlassAt:cgFreezeOK?tpeTime(state.cgAt):'',coinGlassLevelUpper:cgFreezeOK?cgFrozen.shortAmount:'',coinGlassLevelLower:cgFreezeOK?cgFrozen.longAmount:'',
+    const saved=isAt20?readPre20Candidate(day):null;
+    const complete20=Boolean(rows.length&&rows.at(-1).t+900000===t20);
+    if(isAt20&&!saved&&!complete20)return; // Never use yesterday's bars to label today's 20:00 freeze.
+    const atPrice=isAt20?(complete20?rows.at(-1).c:saved?.price):state.price;
+    if(!(atPrice>0))return;
+    // A browser opening at 23:00 must NOT silently freeze the 23:00 CoinGlass quote.
+    // Local 20:00 observation > historical 20:00 proxy reconstruction > missing.
+    const cgOK=Boolean(saved&&saved.mode==='cg');
+    const binOK=Boolean(saved&&saved.mode==='binance');
+    const freezeMode=cgOK?'cg':binOK?'binance':'proxy';
+    const estimated=isAt20&&!saved;
+    const computed=estimated?buildZones(rows,atPrice):null;
+    const proxyUp=estimated?computed?.upper?.find(x=>x.price>atPrice)?.price:null;
+    const proxyDown=estimated?computed?.lower?.find(x=>x.price<atPrice)?.price:null;
+    const rawUp=estimated?(proxyUp??pr?.modelTargets?.upper):saved?.upper;
+    const rawDown=estimated?(proxyDown??pr?.modelTargets?.lower):saved?.lower;
+    // Historical proxy must straddle the real 20:00 reference price.
+    const up=isAt20?Number(rawUp):Number(primary(state.zones.upper)?.price);
+    const down=isAt20?Number(rawDown):Number(primary(state.zones.lower)?.price);
+    if(!(up>atPrice&&down<atPrice&&up>down))return;
+    const created=tpeParts(new Date(isAt20?t20:now)).text;
+    const row={id,day,created,kind,source:state.sourceLabel,
+      mode:isAt20?freezeMode:state.mode,
+      liquidationSource:isAt20?(cgOK?'CoinGlass 24H · 20:00前本機已取得':binOK?'Binance L2 · 20:00前本機已取得':'20:00歷史價格代理估算（非CoinGlass）'):(state.effectiveBoundarySource||'unknown'),
+      price:+Number(atPrice).toFixed(2),upper:+up.toFixed(2),lower:+down.toFixed(2),
+      upperAll:String(up),lowerAll:String(down),coinGlassAt:cgOK?tpeTime(saved.sourceAt):'',
+      coinGlassLevelUpper:cgOK?saved.upperAmount:'',coinGlassLevelLower:cgOK?saved.lowerAmount:'',
       upProb:pr?.ready?+(pr.up*100).toFixed(2):'',downProb:pr?.ready?+((1-pr.up)*100).toFixed(2):'',
       rawUpProb:pr?.ready?+(pr.modelUp*100).toFixed(2):'',baseUpProb:pr?.ready&&Number.isFinite(pr.baseUp)?+(pr.baseUp*100).toFixed(2):'',
       ha:pr?.ready?pr.haColor:'',haDelta:pr?.ready?pr.haDelta*100:'',
       trainedUpper:pr?.ready?pr.modelTargets.upper:'',trainedLower:pr?.ready?pr.modelTargets.lower:'',
-      freezeMethod:isAt20?(Date.now()-t20<90000?'20:00附近直接記錄':'歷史K線回補20:00（CoinGlass不回填）'):'手動',
-      confidence:'方向模型沿用舊價格代理訓練。CoinGlass 為預估痛點；Binance L2 為K線量價代理，不是官方持倉清算價。'};
-    state.snapshots.push(row);persistSnapshots();renderSnapshot();pushCloud(row);if(isAt20)redraw();
+      freezeMethod:isAt20?(saved?'本機保存20:00前清算界（無須R2）':'本機回溯20:00歷史K線代理界；非CoinGlass實測'):'手動',
+      reconstructed:estimated,
+      confidence:'概率仍由價格代理模型訓練；歷史代理價並非 CoinGlass 20:00 實際快照。'};
+    state.snapshots.push(row);state.snapshots.sort((a,b)=>String(a.day).localeCompare(String(b.day))||String(a.created).localeCompare(String(b.created)));
+    persistSnapshots();renderSnapshot();if(isAt20)redraw();
   }
   function renderSnapshot(){
     const list=state.snapshots,latest=list.at(-1),today=tpeParts().date,auto=list.find(x=>x.kind==='auto'&&x.day===today);
-    $('snapshotStatus').textContent=auto?(cloud?.getState()?.phase==='ok'?'今日 20:00 雲端已凍結':'本機暫存，等待雲端驗證'):latest?'已保存 '+list.length+' 筆':'尚未凍結';
+    $('snapshotStatus').textContent=auto?(auto.r2FirstSavedAt?'今日 20:00 雲端已凍結':auto.reconstructed?'20:00 本機代理推估（非CoinGlass快照）':'今日 20:00 本機已凍結（R2非必要）'):latest?'已保存 '+list.length+' 筆':'尚未凍結';
     const d=$('snapshotContent');
     if(!latest){d.textContent='目前沒有快照。按下「儲存目前畫面」可以測試保存。';$('snapshotHistory').replaceChildren();return;}
     const title=latest.kind==='auto'?'20:00 凍結快照':'手動測試快照';
     const htmlText=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    d.innerHTML=`<b>${title} · ${htmlText(latest.created)}</b><div>當時價格 ${fmt(latest.price)}　│　上界 <span style="color:#35e1bb">${latest.upper?fmt(Number(latest.upper)):'--'}</span>　│　下界 <span style="color:#ff8187">${latest.lower?fmt(Number(latest.lower)):'--'}</span></div><div><b>上掃 ${latest.upProb!==''?htmlText(latest.upProb)+'%':'--'} ｜ 下掃 ${latest.downProb!==''?htmlText(latest.downProb)+'%':'--'}</b> · HA ${htmlText(latest.ha||'--')} · 模型代理目標 ${latest.trainedUpper?fmt(Number(latest.trainedUpper)):'--'} / ${latest.trainedLower?fmt(Number(latest.trainedLower)):'--'}</div><div>保存方式：${htmlText(latest.freezeMethod||'舊版紀錄')} · 清算來源：${String(latest.liquidationSource||latest.mode).replace(/[<>&]/g,'')} · ${cloud?.getState()?.phase==='ok'?'R2 雲端已同步':'本機暫存（等待 R2）'}</div>`;
+    d.innerHTML=`<b>${title} · ${htmlText(latest.created)}</b><div>當時價格 ${fmt(latest.price)}　│　上界 <span style="color:#35e1bb">${latest.upper?fmt(Number(latest.upper)):'--'}</span>　│　下界 <span style="color:#ff8187">${latest.lower?fmt(Number(latest.lower)):'--'}</span></div><div><b>上掃 ${latest.upProb!==''?htmlText(latest.upProb)+'%':'--'} ｜ 下掃 ${latest.downProb!==''?htmlText(latest.downProb)+'%':'--'}</b> · HA ${htmlText(latest.ha||'--')} · 模型代理目標 ${latest.trainedUpper?fmt(Number(latest.trainedUpper)):'--'} / ${latest.trainedLower?fmt(Number(latest.trainedLower)):'--'}</div><div>保存方式：${htmlText(latest.freezeMethod||'舊版紀錄')} · 清算來源：${String(latest.liquidationSource||latest.mode).replace(/[<>&]/g,'')} · ${latest.r2FirstSavedAt?'R2 雲端紀錄':latest.reconstructed?'本機20:00代理估算':'本機20:00凍結；未依賴 R2'}</div>`;
     renderSnapshotHistory();
   }
   function renderSnapshotHistory(){
@@ -587,7 +620,13 @@
     table.append(body);host.append(table);
   }
   function scoreSettlements(){ /* cloud Cron settles at 08:10; never score historical R2 data on the client */ }
-  function maybeAutoFreeze(){ /* cloud Cron freezes at 20:02; no browser writes */ }
+  function maybeAutoFreeze(){
+    // Web UI freeze NEVER needs R2. The independent cloud Cron continues to
+    // write cross-device results; browsers do not write to the public read API.
+    const session=chartSession();
+    if(!session.frozenWindow||state.source==='demo'||frozenPriceRecord(session))return;
+    captureSnapshot('auto');
+  }
   function exportCSV(){
     if(!state.snapshots.length){window.alert('目前還沒有保存的快照。');return;}
     const keys=['day','created','kind','source','mode','liquidationSource','price','upper','lower','upperAll','lowerAll','upProb','downProb','rawUpProb','baseUpProb','ha','haDelta','trainedUpper','trainedLower','freezeMethod','result','firstHitTpe','correct','confidence','coinGlassAt','coinGlassLevelUpper','coinGlassLevelLower'];

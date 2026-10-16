@@ -1,11 +1,10 @@
 {
-  "version": "0.9.8",
+  "version": "0.9.9",
   "changes": [
-    "20:00-07:59 chart and main probability panel use only verified R2 frozen level prices",
-    "if no verified R2 freeze exists do not fall back to live CoinGlass/Binance for chart/main target levels",
-    "live draggable 24h quote panel continues updating independently",
-    "frozen distance percentages use the 20:00 frozen reference price",
-    "extra 15-second cloud polling when awaiting freeze; 08:00 returns to live levels",
-    "probability model, Worker, R2, browser capture and scheduled jobs unchanged"
+    "Restore browser-side 20:00 freezing independently of R2",
+    "Preserve valid local 20:00 snapshots when R2 fails or returns empty",
+    "Persist a pre-20 CoinGlass/Binance candidate for exact 20:00 local freeze",
+    "For late-open browser without pre-20 quote, reconstruct only as explicitly labelled historical price proxy",
+    "Floating CoinGlass 24H remains realtime; chart and right-panel prices stay frozen until next 08:00"
   ]
 }
