@@ -1,6 +1,7 @@
+# BTC CoinGlass Daily Results v1.0.0
 name = "btc-liq-automator"
 main = "worker/worker.js"
-compatibility_date = "2026-10-16"
+compatibility_date = "2026-10-17"
 
 [[r2_buckets]]
 binding = "BTC_RECORDS"
@@ -8,9 +9,9 @@ bucket_name = "btc-liq-records"
 
 [vars]
 ALLOWED_ORIGINS = "https://youjianchonglangshou-design.github.io"
-ALLOW_LOCAL_FILE = "true"
 
 [triggers]
-# UTC, corresponding to Taiwan 20:02/20:07/20:12 and next 08:10/08:20/08:30.
-crons = ["2,7,12 12 * * *", "10,20,30 0 * * *"]
-# Secret BTC_RECORDS_TOKEN must be entered via Cloudflare dashboard or `wrangler secret put BTC_RECORDS_TOKEN`.
+# Cloudflare uses UTC (Taiwan UTC+08:00)
+# 12:00 UTC = 20:00 Taipei: CoinGlass capture + 39-feature frozen forecast.
+# 00:01 UTC = next morning 08:01 Taipei: compare 48 closed 15M candles.
+crons = ["0 12 * * *", "1 0 * * *"]

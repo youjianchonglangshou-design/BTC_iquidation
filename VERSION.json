@@ -1,10 +1,13 @@
 {
-  "version": "0.9.9",
+  "version": "1.0.1",
+  "releaseDate": "2026-10-17",
   "changes": [
-    "Restore browser-side 20:00 freezing independently of R2",
-    "Preserve valid local 20:00 snapshots when R2 fails or returns empty",
-    "Persist a pre-20 CoinGlass/Binance candidate for exact 20:00 local freeze",
-    "For late-open browser without pre-20 quote, reconstruct only as explicitly labelled historical price proxy",
-    "Floating CoinGlass 24H remains realtime; chart and right-panel prices stay frozen until next 08:00"
+    "New Cloudflare direct CoinGlass 24H capture at 20:00 Asia/Taipei",
+    "Reuse BTC 39-feature trained forecast and frozen 15M Pionex candles",
+    "Settle the previous session at 08:01 Asia/Taipei using 48 closed 15M candles",
+    "R2 object btc-liq/v2/daily-results.json never changes filename; records retain historical dates",
+    "Public read-only results API and independent BTC_iquidation coinglass-results.html scoreboard",
+    "Explicit CoinGlass failure/partial model status, no fake forecasts",
+    "BTC_iquidation/index.html opens coinglass-results.html in a new browser tab; SStateMarketTerminal remains untouched"
   ]
 }
