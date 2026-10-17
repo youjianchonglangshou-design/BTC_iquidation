@@ -1,4 +1,4 @@
-# BTC CoinGlass Daily Results v1.0.0
+# BTC_iquidation v1.1.0; optional Wrangler deployment, or paste worker/worker.js into Cloudflare editor.
 name = "btc-liq-automator"
 main = "worker/worker.js"
 compatibility_date = "2026-10-17"
@@ -11,7 +11,6 @@ bucket_name = "btc-liq-records"
 ALLOWED_ORIGINS = "https://youjianchonglangshou-design.github.io"
 
 [triggers]
-# Cloudflare uses UTC (Taiwan UTC+08:00)
-# 12:00 UTC = 20:00 Taipei: CoinGlass capture + 39-feature frozen forecast.
-# 00:01 UTC = next morning 08:01 Taipei: compare 48 closed 15M candles.
-crons = ["0 12 * * *", "1 0 * * *"]
+# UTC 12:00 = Taipei 20:00; dispatch one GitHub YML; poll every 5m until TPE 07:55.
+# UTC 00:01 = Taipei 08:01; repeat settlement every 5m if exchange's final closed bar is delayed.
+crons = ["*/5 12-23 * * *", "1,6,11,16,21,26,31,36,41,46,51,56 0 * * *"]

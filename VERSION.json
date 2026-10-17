@@ -1,13 +1,13 @@
 {
-  "version": "1.0.1",
+  "version": "1.1.0",
   "releaseDate": "2026-10-17",
   "changes": [
-    "New Cloudflare direct CoinGlass 24H capture at 20:00 Asia/Taipei",
-    "Reuse BTC 39-feature trained forecast and frozen 15M Pionex candles",
-    "Settle the previous session at 08:01 Asia/Taipei using 48 closed 15M candles",
-    "R2 object btc-liq/v2/daily-results.json never changes filename; records retain historical dates",
-    "Public read-only results API and independent BTC_iquidation coinglass-results.html scoreboard",
-    "Explicit CoinGlass failure/partial model status, no fake forecasts",
-    "BTC_iquidation/index.html opens coinglass-results.html in a new browser tab; SStateMarketTerminal remains untouched"
+    "Retained the existing verified CoinGlass GitHub YML capture without rewriting its decoder",
+    "Cloudflare Cron 20:00 TPE dispatches workflow_dispatch; 5-minute polling imports committed Github data/latest.json",
+    "Reuses original 39-feature probability engine in GitHub at 20:00 as-of time, with Pionex 15M + 1D data",
+    "R2 stable object btc-liq/v2/daily-results.json retains all dates, idempotent first valid snapshot",
+    "Next day 08:01 TPE settle 48 completed Pionex 15M candles, automatic retries through 08:56 if market data late",
+    "Excludes proxy/fallback, missing probabilities, late (>5 minutes) captures, no-touch and same-bar double-touch from official success rate",
+    "Single-file Cloudflare Worker no CoinGlass decoder, no imports, results page opens from BTC_iquidation/index.html in new tab"
   ]
 }
