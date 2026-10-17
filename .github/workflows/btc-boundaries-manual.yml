@@ -1,9 +1,17 @@
-# BTC_iquidation — manual CoinGlass 24H / Binance L2 boundary snapshot v1.0.0
-# Reuses the project's existing readers; no Cloudflare, R2, or API keys required.
-name: BTC 上下界快照（手動）
+# BTC_iquidation v1.1.0 — preserves the proven CoinGlass capture exactly.
+# Cloudflare at 20:00 TPE: workflow_dispatch with capture_mode=daily20.
+# Manually triggering in GitHub remains available; default is manual.
+name: BTC 上下界快照（手動與 Cloudflare 排程）
 
 on:
   workflow_dispatch:
+    inputs:
+      capture_mode:
+        description: 'manual 或 daily20（Cloudflare 每晚20:00觸發）'
+        type: choice
+        options: [manual, daily20]
+        default: manual
+        required: true
 
 permissions:
   contents: write
@@ -14,9 +22,9 @@ concurrency:
 
 jobs:
   capture:
-    name: 擷取上下界並存入 data
+    name: 擷取上下界與20時凍結機率
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - name: 取得專案
         uses: actions/checkout@v4
@@ -28,6 +36,7 @@ jobs:
         with:
           node-version: '22'
 
+      # EXISTING PROVEN CoinGlass capture block copied without algorithm changes.
       - name: 擷取 BTC 24H 上下界（CoinGlass 優先、Binance L2 備援）
         shell: bash
         run: |
@@ -119,6 +128,11 @@ jobs:
           }
           capture().catch(e => { console.error('擷取失敗（不產生假資料）：', shortReason(e)); process.exitCode = 1; });
           NODE
+
+      - name: 追加既有 BTC 39 特徵模型機率（daily20 時凍結20時狀態）
+        env:
+          CAPTURE_MODE: ${{ inputs.capture_mode }}
+        run: node .github/scripts/freeze-probability.cjs
 
       - name: 自動提交 JSON 到目前分支
         shell: bash
