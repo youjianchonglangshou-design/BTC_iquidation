@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0.0",
+  "symbol": "BTCUSDT",
+  "observedAt": "2026-10-17T08:23:47.979Z",
+  "observedAtTPE": "2026-10-17T16:23:47.979+08:00",
+  "source": "CoinGlass",
+  "sourceType": "coinglass-24h",
+  "isEstimate": false,
+  "range": "24h",
+  "upper": 82768.78,
+  "lower": 80813.92,
+  "referencePrice": 81705.9,
+  "upperAmount": 66239741.1,
+  "lowerAmount": 53986953.36,
+  "coinGlassVersion": "1",
+  "captureMode": "manual"
+}
