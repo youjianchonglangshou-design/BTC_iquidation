@@ -1,0 +1,134 @@
+# BTC_iquidation — manual CoinGlass 24H / Binance L2 boundary snapshot v1.0.0
+# Reuses the project's existing readers; no Cloudflare, R2, or API keys required.
+name: BTC 上下界快照（手動）
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: btc-boundaries-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    name: 擷取上下界並存入 data
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 取得專案
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: 啟用 Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 擷取 BTC 24H 上下界（CoinGlass 優先、Binance L2 備援）
+        shell: bash
+        run: |
+          node <<'NODE'
+          'use strict';
+          const fs = require('node:fs');
+          const vm = require('node:vm');
+
+          // The existing reader files are authoritative: do not duplicate their algorithms.
+          for (const file of ['coinglass-decrypt.js', 'binance-l2.js']) {
+            if (!fs.existsSync(file)) throw new Error(`專案根目錄缺少 ${file}`);
+          }
+          const browser = {};
+          const context = {
+            window: browser,
+            fetch: (...args) => globalThis.fetch(...args),
+            Uint8Array, TextEncoder, TextDecoder, DecompressionStream,
+            Blob, Response, AbortController, atob, btoa,
+            setTimeout, clearTimeout,
+          };
+          vm.runInNewContext(fs.readFileSync('coinglass-decrypt.js', 'utf8'), context, {
+            filename: 'coinglass-decrypt.js', timeout: 15000,
+          });
+          vm.runInNewContext(fs.readFileSync('binance-l2.js', 'utf8'), context, {
+            filename: 'binance-l2.js', timeout: 15000,
+          });
+
+          function checkBoundaries(upper, lower) {
+            const u = Number(upper), l = Number(lower);
+            if (!Number.isFinite(u) || !Number.isFinite(l) || !(u > l && l > 0 && u < 20000000)) {
+              throw new Error('上下界無效：不得將錯誤價格寫入 JSON');
+            }
+            return { upper: u, lower: l };
+          }
+          const clean = value => Number.isFinite(Number(value)) && Number(value) > 0
+            ? Number(value) : null;
+          const shortReason = e => String(e?.message || e).slice(0, 300);
+          async function capture() {
+            let data, coinGlassError = null;
+            try {
+              console.log('CoinGlass 24H：嘗試讀取及解碼...');
+              const response = await browser.CoinGlassReader.fetchCoinGlass('24h');
+              const btc = browser.CoinGlassReader.readMaxPain(response.data);
+              if (!btc) throw new Error('已解碼，但找不到 BTC 上下界');
+              const { upper, lower } = checkBoundaries(btc.short, btc.long);
+              data = {
+                source: 'CoinGlass', sourceType: 'coinglass-24h', isEstimate: false,
+                range: '24h', upper, lower,
+                referencePrice: clean(btc.referencePrice),
+                upperAmount: clean(btc.shortAmount), lowerAmount: clean(btc.longAmount),
+                coinGlassVersion: String(response.version),
+              };
+            } catch (e) {
+              coinGlassError = shortReason(e);
+              console.warn(`CoinGlass 讀取失敗：${coinGlassError}`);
+              console.log('改用原專案的 Binance 15M L2 清算代理價位...');
+              const layers = await browser.BinanceL2.fetchLayers();
+              const { upper, lower } = checkBoundaries(layers.upper.price, layers.lower.price);
+              data = {
+                source: layers.feed, sourceType: 'binance-15m-l2-proxy', isEstimate: true,
+                range: '72h / 288 x 15m', upper, lower,
+                referencePrice: clean(layers.referencePrice),
+                upperStrength: clean(layers.upper.score),
+                lowerStrength: clean(layers.lower.score),
+                upperAmount: null, lowerAmount: null,
+                lastKlineAt: new Date(layers.lastKlineAt).toISOString(),
+                feedType: layers.feedType,
+                upperZones: layers.all.upper,
+                lowerZones: layers.all.lower,
+                fallbackReason: coinGlassError,
+              };
+            }
+
+            const now = new Date();
+            const tpeIso = new Date(now.getTime() + 8 * 60 * 60 * 1000)
+              .toISOString().replace('Z', '+08:00');
+            const record = {
+              schemaVersion: '1.0.0', symbol: 'BTCUSDT',
+              observedAt: now.toISOString(), observedAtTPE: tpeIso,
+              ...data,
+            };
+            fs.mkdirSync('data', { recursive: true });
+            const payload = JSON.stringify(record, null, 2) + '\n';
+            const datedFile = `data/${tpeIso.slice(0, 19).replace('T', '_').replace(/:/g, '-')}.json`;
+            fs.writeFileSync('data/latest.json', payload);
+            fs.writeFileSync(datedFile, payload);
+            console.log(`完成：${record.sourceType} | 上界 ${record.upper} | 下界 ${record.lower}`);
+            console.log(`已儲存 data/latest.json 及 ${datedFile}`);
+          }
+          capture().catch(e => { console.error('擷取失敗（不產生假資料）：', shortReason(e)); process.exitCode = 1; });
+          NODE
+
+      - name: 自動提交 JSON 到目前分支
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/latest.json data/*.json
+          if git diff --cached --quiet; then
+            echo '沒有新變更'
+            exit 0
+          fi
+          git commit -m "data: BTC 上下界手動快照 $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
