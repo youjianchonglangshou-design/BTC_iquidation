@@ -302,7 +302,7 @@
     const cur=window.BTCLiqEngine.forecast(state.candles,dailyFor(asof),asof,quote);
     if(!cur.ready)return {...cur,day,phase:'missing',asof};
     const foundation=window.BTCLiqEngine.forecast(state.candles,dailyFor(t16),t16);
-    return {...cur,baseUp:foundation.ready?foundation.modelUp:null,day,phase:obs>=t20?'frozen':'dynamic',asof,price:cur.features?state.candles.filter(x=>x.t+900000<=asof).at(-1)?.c:null};
+    return {...cur,baseUp:foundation.ready?foundation.modelUp:null,baseFeatures:foundation.ready?foundation.features:null,day,phase:obs>=t20?'frozen':'dynamic',asof,price:cur.features?state.candles.filter(x=>x.t+900000<=asof).at(-1)?.c:null};
   }
   function showProbability(){
     // HA is ALWAYS updated separately, including 08:00–16:00 and post-freeze.
