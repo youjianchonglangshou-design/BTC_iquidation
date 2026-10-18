@@ -77,7 +77,8 @@
       z+=contribution;
       entries.push({name,label:names[name]||name,x,contribution});
     }
-    const c=meta.calibration.slope*z+meta.calibration.intercept;
+    const zClamped=Math.max(-30,Math.min(30,z));
+    const c=meta.calibration.slope*zClamped+meta.calibration.intercept;
     return {z,c,up:1/(1+Math.exp(-Math.max(-30,Math.min(30,c)))),entries};
   }
   function table(list, extended){
