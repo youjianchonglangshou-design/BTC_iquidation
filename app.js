@@ -730,7 +730,7 @@
     state.cgBusy=true;state.refreshCGAt=Date.now();redraw();
     try{
       if(!window.CoinGlassReader)throw Error('CoinGlass 解碼器未載入');
-      const raw=await window.CoinGlassReader.fetchCoinGlass('24h');
+      const raw=await window.CoinGlassReader.fetchCoinGlass('7d');
       const result=window.CoinGlassReader.readMaxPain(raw.data);
       if(!result||!(result.short>0&&result.long>0))throw Error('CoinGlass JSON 沒有有效 BTC 上下界');
       state.cgPain=result;state.cgAt=Date.now();state.cgVersion=raw.version;state.cgError='';state.cgFailures=0;
